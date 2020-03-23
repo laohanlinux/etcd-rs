@@ -1,3 +1,5 @@
+pub mod raft;
+
 #[cfg(test)]
 mod tests {
     #[test]
