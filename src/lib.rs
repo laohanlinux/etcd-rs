@@ -1,3 +1,5 @@
+#![feature(is_sorted)]
+
 pub mod raft;
 
 #[cfg(test)]
