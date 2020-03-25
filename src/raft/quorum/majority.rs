@@ -1,13 +1,16 @@
-use std::collections::{HashSet, HashMap};
-use std::fmt::{self, Formatter, Display, Error, Write};
+use std::collections::HashSet;
+use std::fmt::{self, Formatter, Display, Write};
 
 #[derive(Clone)]
 pub struct MajorityConfig {
-    votes: HashSet<i64>,
+    pub(crate) votes: HashSet<u64>,
 }
 
 impl MajorityConfig {
     // fn vote_result(votes: &HashMap<i64, bool>) -> Option<>
+    pub fn new() -> Self {
+        MajorityConfig { votes: HashSet::new() }
+    }
 }
 
 impl From<String> for MajorityConfig {
@@ -16,13 +19,13 @@ impl From<String> for MajorityConfig {
     }
 }
 
-impl From<Vec<i64>> for MajorityConfig {
-    fn from(v: Vec<i64>) -> Self {
+impl From<Vec<u64>> for MajorityConfig {
+    fn from(v: Vec<u64>) -> Self {
         let mut config = MajorityConfig {
             votes: HashSet::new(),
         };
         for item in v.iter() {
-           config.votes.insert(*item);
+            config.votes.insert(*item);
         }
         config
     }
@@ -30,10 +33,10 @@ impl From<Vec<i64>> for MajorityConfig {
 
 impl Display for MajorityConfig {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let mut votes: Vec<i64> = self.votes.iter().map(|v| *v).collect();
+        let mut votes: Vec<u64> = self.votes.iter().map(|v| *v).collect();
         votes.sort();
-        let mut votes: Vec<String> = votes.iter().map(|v| format!("{}", v)).collect();
-        let mut s: String = votes.iter()
+        let votes: Vec<String> = votes.iter().map(|v| format!("{}", v)).collect();
+        let s: String = votes.iter()
             .map(|s| s.chars())
             .flatten()
             .collect();
