@@ -2,6 +2,7 @@ use crate::raft::quorum::majority::MajorityConfig;
 use std::fmt::{self, Display, Formatter, Error};
 use std::collections::{HashMap, HashSet};
 use std::process::id;
+use crate::AckedIndexer;
 
 pub struct JointConfig([MajorityConfig; 2]);
 
@@ -23,6 +24,8 @@ impl Display for JointConfig {
 }
 
 impl JointConfig {
+    // IDs returns a newly initialized map representing the set of voters present
+    // in the joint configuration.
     pub fn ids(&self) -> HashSet<u64> {
         let mut hash_set = HashSet::new();
         for mj_config in self.0.iter() {
@@ -30,4 +33,8 @@ impl JointConfig {
         }
         hash_set
     }
+
+    // TODO
+    // Describe returns a (multi-line) representation of the commit indexes for the given lookuper.
+    pub fn describe<T: AckedIndexer>(&self, l: T) -> String {"".to_string()}
 }
