@@ -64,6 +64,12 @@ impl MajorityConfig {
         // Populate .bar.
         "".to_string()
     }
+
+    pub fn as_slice(&self) -> Vec<u64> {
+        let mut s1: Vec<u64> = self.votes.iter().map(|v| *v).collect();
+        s1.sort_by_key(|v| *v);
+        s1
+    }
 }
 
 impl From<String> for MajorityConfig {
