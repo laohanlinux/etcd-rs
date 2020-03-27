@@ -72,12 +72,6 @@ impl MajorityConfig {
     }
 }
 
-impl From<String> for MajorityConfig {
-    fn from(_: String) -> Self {
-        unimplemented!()
-    }
-}
-
 impl From<&Vec<u64>> for MajorityConfig {
     fn from(v: &Vec<u64>) -> Self {
         let mut config = MajorityConfig {
