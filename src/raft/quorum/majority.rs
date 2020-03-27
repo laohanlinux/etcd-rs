@@ -78,6 +78,18 @@ impl From<String> for MajorityConfig {
     }
 }
 
+impl From<&Vec<u64>> for MajorityConfig {
+    fn from(v: &Vec<u64>) -> Self {
+        let mut config = MajorityConfig {
+            votes: HashSet::new(),
+        };
+        for item in v.iter() {
+            config.votes.insert(*item);
+        }
+        config
+    }
+}
+
 impl From<Vec<u64>> for MajorityConfig {
     fn from(v: Vec<u64>) -> Self {
         let mut config = MajorityConfig {
@@ -95,10 +107,32 @@ impl Display for MajorityConfig {
         let mut votes: Vec<u64> = self.votes.iter().map(|v| *v).collect();
         votes.sort();
         let votes: Vec<String> = votes.iter().map(|v| format!("{}", v)).collect();
-        let s: String = votes.iter()
-            .map(|s| s.chars())
-            .flatten()
-            .collect();
+        let s: String = votes.join(",");
         write!(f, "({})", s)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::raft::quorum::majority::MajorityConfig;
+
+    #[test]
+    fn t_majority() {
+        let mut majority = MajorityConfig::new();
+        majority.votes.insert(0);
+        majority.votes.insert(1);
+        assert_eq!("(0,1)", format!("{}", majority));
+        let mut majority = MajorityConfig::new();
+        assert_eq!("()", format!("{}", majority));
+
+        let v = &vec![0, 1, 2];
+        let majority: MajorityConfig = v.into();
+        assert_eq!("(0,1,2)", format!("{}", majority));
+        let majority: MajorityConfig = v.into();
+        assert_eq!("(0,1,2)", format!("{}", majority));
+
+        let mut majority = MajorityConfig::new();
+        majority.votes.insert(0);
+        assert_eq!(vec![0], majority.as_slice());
     }
 }
