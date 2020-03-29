@@ -3,6 +3,7 @@
 use std::collections::HashMap;
 
 pub mod raft;
+pub mod mvcc;
 
 pub type Index = u64;
 
