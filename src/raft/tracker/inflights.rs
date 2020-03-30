@@ -98,7 +98,7 @@ impl Inflights {
         self.count
     }
 
-    fn reset(&mut self) {
+    pub(crate) fn reset(&mut self) {
         self.count = 0;
         self.start = 0;
     }
