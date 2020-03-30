@@ -18,7 +18,7 @@ pub struct Inflights {
 
 impl Inflights {
     pub fn new(size: usize) -> Self {
-        Inflights { start: 0, count: 0, size, buffer: vec![] }
+        Inflights { start: 0, count: 0, size, buffer: vec![0].repeat(size) }
     }
 
     // Add notifies the Inflights that a new message with the given index is being
@@ -70,7 +70,7 @@ impl Inflights {
                 break;
             }
             let size = self.size;
-            idx + 1;
+            idx += 1;
             if idx >= size {
                 idx -= size;
             }
@@ -88,7 +88,7 @@ impl Inflights {
 
     // FreeFirstOne releases the first inflight. This is a no-op if nothing is
     // inflight.
-    pub fn free_first_one(&mut self) {}
+    pub fn free_first_one(&mut self) { self.free_le(self.buffer[self.start]) }
 
     pub fn full(&mut self) -> bool {
         self.count == self.size
@@ -116,14 +116,99 @@ mod tests {
             size: 10,
             buffer: vec![0].repeat(10),
         };
-        for i in 0..5 {
-            inf.add(i);
-        }
-        let mut want_inf = Inflights {
+        (0..5).for_each(|i| inf.add(i));
+        let want_inf = Inflights {
             start: 0,
             count: 5,
             size: 10,
             buffer: vec![0, 1, 2, 3, 4, 0, 0, 0, 0, 0],
+        };
+        assert_eq!(inf, want_inf);
+
+        (5..10).for_each(|i| inf.add(i));
+        let want_inf = Inflights {
+            start: 0,
+            count: 10,
+            size: 10,
+            buffer: vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+        };
+        assert_eq!(inf, want_inf);
+
+        // rotating case
+        let mut in2 = Inflights { start: 5, count: 0, size: 10, buffer: vec![0].repeat(10) };
+        (0..5).for_each(|i| in2.add(i));
+        let want_inf = Inflights { start: 5, count: 5, size: 10, buffer: vec![0, 0, 0, 0, 0, 0, 1, 2, 3, 4] };
+        assert_eq!(in2, want_inf);
+
+        (5..10).for_each(|i| in2.add(i));
+        let want_inf = Inflights { start: 5, count: 10, size: 10, buffer: vec![5, 6, 7, 8, 9, 0, 1, 2, 3, 4] };
+        assert_eq!(in2, want_inf);
+    }
+
+    #[test]
+    fn it_inflights_free_to() {
+        let mut inf = Inflights::new(10);
+        (0..10).for_each(|i| inf.add(i));
+        inf.free_le(4);
+        let want_inf = Inflights {
+            start: 5,
+            count: 5,
+            size: 10,
+            buffer: vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+        };
+        assert_eq!(inf, want_inf);
+
+        inf.free_le(4);
+        assert_eq!(inf, want_inf);
+
+        inf.free_le(8);
+        let want_inf = Inflights {
+            start: 9,
+            count: 1,
+            size: 10,
+            buffer: vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+        };
+        assert_eq!(inf, want_inf);
+
+        // rotating case
+        (10..15).for_each(|i| inf.add(i));
+        let want_inf = Inflights {
+            start: 9,
+            count: 6,
+            size: 10,
+            buffer: vec![10, 11, 12, 13, 14, 5, 6, 7, 8, 9],
+        };
+        assert_eq!(inf, want_inf);
+
+        inf.free_le(12);
+        let want_inf = Inflights {
+            start: 3,
+            count: 2,
+            size: 10,
+            buffer: vec![10, 11, 12, 13, 14, 5, 6, 7, 8, 9],
+        };
+        assert_eq!(inf, want_inf);
+
+        inf.free_le(14);
+        let want_inf = Inflights {
+            start: 0,
+            count: 0,
+            size: 10,
+            buffer: vec![10, 11, 12, 13, 14, 5, 6, 7, 8, 9],
+        };
+        assert_eq!(inf, want_inf);
+    }
+
+    #[test]
+    fn it_inflights_free_first_one() {
+        let mut inf = Inflights::new(10);
+        (0..10).for_each(|i| inf.add(i));
+        inf.free_first_one();
+        let want_inf = Inflights {
+            start: 1,
+            count: 9,
+            size: 10,
+            buffer: vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
         };
         assert_eq!(inf, want_inf);
     }

@@ -1,5 +1,7 @@
 #![feature(is_sorted)]
 
+#[macro_use] extern crate log;
+
 use std::collections::HashMap;
 
 pub mod raft;
