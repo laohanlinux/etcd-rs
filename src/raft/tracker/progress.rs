@@ -1,5 +1,8 @@
 use crate::raft::tracker::state::StateType;
 use crate::raft::tracker::inflights::Inflights;
+use crate::raft::tracker::state::StateType::StateProbe;
+use std::fmt::{self, Display, Formatter, Error};
+use std::collections::HashMap;
 
 // Progress represents a follower's progress in the view of the leader. Leader
 // maintains progresses of all followers, and sends entries to the follower
@@ -79,5 +82,64 @@ impl Progress {
         self.probe_sent = false;
     }
 
-    
+    // BecomeProbe transaction into StateProbe. Next is reset to Match+1 or,
+    // optionally and if larger, the index of the pending snapshot.
+    pub fn become_probe(&mut self) {
+        // If the original state is StateSnapshot, Progress knows that
+        // the pending snapshot has been sent to this peer Successfully, then
+        // probes from pendingSnapshot + 1.
+        if self.state == StateType::StateSnapshot {
+            let pending_snapshot = self.pending_snapshot;
+            self.reset_state(StateType::StateProbe);
+            self.next = (self._match + 1).max(pending_snapshot + 1);
+        } else {
+            self.reset_state(StateType::StateProbe);
+            self.next = self._match + 1;
+        }
+    }
+
+    // Become Replicate transaction into StateReplicate, resetting Next to _match + 1
+    pub fn become_replicate(&mut self) {
+        self.reset_state(StateType::StateSnapshot);
+        self.next = self._match + 1;
+    }
+
+    // BecomeSnapshot moves that Progress to StateSnapshot with the specified pending
+    // snapshot
+    pub fn become_snapshot(&mut self, snapshot: u64) {
+        self.reset_state(StateType::StateSnapshot);
+        self.pending_snapshot = snapshot;
+    }
+
+    // pub fn maybe_update(&mut self, n: u64) -> bool {
+    //     if self._match < n {
+    //
+    //     }
+    // }
+}
+//
+// impl Display for Progress {
+//     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+//         write!(f, "{} match={} next={} ", self.state, self._match, self.next)?;
+//         if self.is_leader {
+//             write!(f, " learner")?;
+//         }
+//
+//     }
+// }
+
+// ProgressMap is a map of *Progress
+pub struct ProgressMap(HashMap<u64, Progress>);
+
+impl Display for ProgressMap {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let mut keys: Vec<u64> = self.0.keys().map(|uid| *uid).collect();
+        keys.sort_by_key(|k| *k);
+        let keys: Vec<String> = keys.iter().map(|uid| format!("{}", uid)).collect();
+
+        for (idx, uid) in keys.iter().enumerate() {
+            write!(f, "{}: {}\n", idx, uid)?;
+        }
+        Ok(())
+    }
 }
