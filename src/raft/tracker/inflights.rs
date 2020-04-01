@@ -90,7 +90,7 @@ impl Inflights {
     // inflight.
     pub fn free_first_one(&mut self) { self.free_le(self.buffer[self.start]) }
 
-    pub fn full(&mut self) -> bool {
+    pub fn full(&self) -> bool {
         self.count == self.size
     }
 

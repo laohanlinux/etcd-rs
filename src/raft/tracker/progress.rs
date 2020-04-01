@@ -1,6 +1,6 @@
 use crate::raft::tracker::state::StateType;
 use crate::raft::tracker::inflights::Inflights;
-use crate::raft::tracker::state::StateType::StateProbe;
+use crate::raft::tracker::state::StateType::{StateProbe, StateReplicate};
 use std::fmt::{self, Display, Formatter, Error};
 use std::collections::HashMap;
 
@@ -40,7 +40,7 @@ pub struct Progress {
     // recent_active can be reset to false after an election timeout.
     //
     // TODO(tbg): the leader should always have this set to true.
-    recent_active: u64,
+    recent_active: bool,
 
     // ProbeSent is used while this follower is in StateProbe. When ProbeSent is
     // true, raft should pause sending replication message to this peer until
@@ -111,22 +111,108 @@ impl Progress {
         self.pending_snapshot = snapshot;
     }
 
-    // pub fn maybe_update(&mut self, n: u64) -> bool {
-    //     if self._match < n {
+    // maybe_update is called when an MsgAppResp arrives from the follower, with the
+    // index acked by it. The method returns false if the given n index comese of from
+    // an outdated message. Otherwise it updates the progress and return true.
+    pub fn maybe_update(&mut self, n: u64) -> bool {
+        let mut update = false;
+        if self._match < n {
+            self._match = n;
+            update = true;
+            self.probe_acked();
+        }
+        if self.next < n + 1 {
+            self.next = n + 1;
+        }
+        update
+    }
+
+    // OptimisticUpdate signals the appends all the way up to and including index n
+    // are in-flight. As a result. Next is increased to n + 1
+    pub fn optimistic_update(&mut self, n: u64) {
+        self.next = n + 1;
+    }
+
+    // MaybeDecrTo adjust the Progress to the receipt of a MsgApp rejection. The
+    // arguments are the index the follower rejected to append to its log, and its
+    // last index.
     //
-    //     }
-    // }
+    // rejecteds can happen spuriously as messages are sent out of order or
+    // duplicated. In such cases, the rejection pertains to an index that the
+    // Progress already knows were previously acknowledged, and false is returned
+    // without changing the Progress.
+    //
+    // If the rejection is genuine, Next is lowered sensibly, and the Progress is
+    // cleared for sending log entries
+
+    pub fn maybe_decr_to(&mut self, rejected: u64, last: u64) -> bool {
+        if self.state == StateReplicate {
+            // The rejected must be stale if the progress has matched and "rejected"
+            // is smaller than "match".
+            if rejected <= self._match {
+                return false;
+            }
+            // Directly decrease next to match + 1
+            //
+            // TODO(tbg): Why not use last if it's larger?
+            self.next = self._match + 1;
+            return true;
+        }
+
+        // The rejection must be stale if "rejected" does not match next - 1. This
+        // is because non-replicating followers are probed one entry at a time.
+        if self.next - 1 != rejected {
+            return false;
+        }
+
+        self.next = rejected.min(last + 1);
+        if self.next < 1 {
+            self.next = 1;
+        }
+        self.probe_sent = false;
+        true
+    }
+
+    // IsPaused return whether sending log entries to this node has been throttled.
+    // This is done when a node has rejected recent MsgApp, is currently waiting
+    // for a snapshot, or has reached the MaxInflightMsgs limit. In normal
+    // operation, this is false. A throttled node will be contacted less frequently
+    // until it has reached a state in which it's able to accept a steady stream of
+    // log entries again.
+    pub fn is_paused(&self) -> bool {
+        match self.state {
+            StateType::StateProbe => self.probe_sent,
+            StateType::StateReplicate => self.inflights.full(),
+            StateType::StateSnapshot => true
+        }
+    }
 }
-//
-// impl Display for Progress {
-//     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-//         write!(f, "{} match={} next={} ", self.state, self._match, self.next)?;
-//         if self.is_leader {
-//             write!(f, " learner")?;
-//         }
-//
-//     }
-// }
+
+impl Display for Progress {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{} match={} next={} ", self.state, self._match, self.next)?;
+        if self.is_leader {
+            write!(f, " learner")?;
+        }
+        if self.is_paused() {
+            write!(f, " paused")?;
+        }
+        if self.pending_snapshot > 0 {
+            write!(f, " pendingSnap={}", self.pending_snapshot)?;
+        }
+        if !self.recent_active {
+            write!(f, " inactive")?;
+        }
+        let n = self.inflights.count();
+        if n > 0 {
+            write!(f, " inflight={}", n)?;
+            if self.inflights.full() {
+                write!(f, "[full]")?;
+            }
+        }
+        Ok(())
+    }
+}
 
 // ProgressMap is a map of *Progress
 pub struct ProgressMap(HashMap<u64, Progress>);
@@ -142,4 +228,11 @@ impl Display for ProgressMap {
         }
         Ok(())
     }
+}
+
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn it_works() {}
 }
