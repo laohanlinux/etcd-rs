@@ -47,6 +47,9 @@ pub struct Progress {
     // ProbeSent is reset. See ProbeAcked() and IsPaused().
     probe_sent: bool,
 
+    // IsLeader is true if this progress is tracked for a leader.
+    is_leader: bool,
+
     // Inflights is a sliding window for the inflight messages.
     // Each inflight message contains one or mre log entries.
     // The max number of entries per message is defined in raft config as MaxSizePerMsg.
@@ -60,9 +63,6 @@ pub struct Progress {
     // be freed by calling inflights.FreeLe with the index of the last
     // received entry.
     inflights: Inflights,
-
-    // IsLeader is true if this progress is tracked for a leader.
-    is_leader: bool,
 }
 
 impl Progress {
@@ -190,7 +190,7 @@ impl Progress {
 
 impl Display for Progress {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{} match={} next={} ", self.state, self._match, self.next)?;
+        write!(f, "{} match={} next={}", self.state, self._match, self.next)?;
         if self.is_leader {
             write!(f, " learner")?;
         }
@@ -233,6 +233,43 @@ impl Display for ProgressMap {
 
 #[cfg(test)]
 mod tests {
+    use crate::raft::tracker::inflights::Inflights;
+    use crate::raft::tracker::progress::Progress;
+    use crate::raft::tracker::state::StateType;
+
     #[test]
-    fn it_works() {}
+    fn it_process_string() {
+        let mut ins = Inflights::new(1);
+        ins.add(123);
+        let mut pr = Progress {
+            _match: 1,
+            next: 2,
+            state: StateType::StateSnapshot,
+            pending_snapshot: 123,
+            recent_active: false,
+            probe_sent: true,
+            is_leader: true,
+            inflights: ins,
+        };
+        let exp = "StateSnapshot match=1 next=2 learner paused pendingSnap=123 inactive inflight=1[full]";
+        assert_eq!(format!("{}", pr), exp);
+    }
+
+    #[test]
+    pub fn t_process_is_paused() {
+        struct Param{
+            state: StateType,
+            paused: bool,
+            w: bool,
+        }
+        let tests = vec![Param{
+            state: StateType::StateProbe,
+            paused: false,
+            w: false
+        }, Param{
+            state: StateType::StateProbe,
+            paused: true,
+            w: true
+        }];
+    }
 }
