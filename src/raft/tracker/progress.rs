@@ -257,19 +257,42 @@ mod tests {
 
     #[test]
     pub fn t_process_is_paused() {
-        struct Param{
+        struct Param {
             state: StateType,
             paused: bool,
             w: bool,
         }
-        let tests = vec![Param{
+        let tests = vec![Param {
             state: StateType::StateProbe,
             paused: false,
-            w: false
-        }, Param{
+            w: false,
+        }, Param {
             state: StateType::StateProbe,
             paused: true,
-            w: true
+            w: true,
+        }, Param {
+            state: StateType::StateReplicate,
+            paused: false,
+            w: false,
+        }, Param {
+            state: StateType::StateSnapshot,
+            paused: false,
+            w: true,
+        }, Param {
+            state: StateType::StateReplicate,
+            paused: true,
+            w: false,
         }];
+
+        // for (i, tt) in tests.iter().enumerate() {
+        //     let p = Progress {
+        //         _match: 0,
+        //         next: 0,
+        //         state: tt.state.clone(),
+        //         pending_snapshot: 0,
+        //         recent_active: false,
+        //         probe_sent: tt.paused,
+        //     };
+        // }
     }
 }
