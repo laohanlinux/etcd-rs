@@ -2,7 +2,7 @@ use crate::raft::quorum::majority::MajorityConfig;
 use std::fmt::{self, Display, Formatter, Error};
 use std::collections::{HashMap, HashSet};
 use std::process::id;
-use crate::AckedIndexer;
+use crate::raft::quorum::quorum::AckedIndexer;
 
 pub struct JointConfig([MajorityConfig; 2]);
 

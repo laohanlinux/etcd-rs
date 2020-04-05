@@ -1,8 +1,8 @@
 use std::collections::HashSet;
 use std::fmt::{self, Formatter, Display, Write};
-use crate::{Index, AckedIndexer};
 use std::process::id;
 use std::cmp::Ordering;
+use crate::raft::quorum::quorum::{AckedIndexer, Index};
 
 #[derive(Clone)]
 pub struct MajorityConfig {
@@ -35,7 +35,7 @@ impl MajorityConfig {
         let n = self.votes.len();
         let mut info: Vec<Tup> = Vec::new();
         for vote in self.votes.iter() {
-            if let Some(idx) = l.AckedIndex(vote) {
+            if let Some(idx) = l.acked_index(vote) {
                 info.push(Tup {
                     id: *vote,
                     idx: *idx,
@@ -63,6 +63,19 @@ impl MajorityConfig {
 
         // Populate .bar.
         "".to_string()
+    }
+
+    // commit_index computes the committed index from those supplied via the
+    // provide acked_index (for the active config).
+    pub fn committed_index<T: AckedIndexer>(&mut self, l: T) -> Index {
+        if self.votes.is_empty() {
+            // This plays well with joint quorum which, when one of half is the zero
+            // MajorityConfig, should behave like the other half.
+            return u64::max_value()
+        }
+        // Use a on-stack slice to collect the committed indexes when n <= 7
+        //
+        0
     }
 
     pub fn as_slice(&self) -> Vec<u64> {
