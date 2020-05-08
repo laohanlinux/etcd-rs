@@ -8,4 +8,7 @@ edition = "2018"
 
 [dependencies]
 log = "0.4"
-protobuf = "2.14.0"
+protobuf = { version = "2", features = ["with-bytes"] }
+
+[build-dependencies]
+protoc-rust = "2.0"
