@@ -1,13 +1,13 @@
 pub struct RangeOptions {
     limit: i64,
-    Rev: i64,
-    Count: bool,
+    pub rev: i64,
+    pub count: bool,
 }
 
 pub struct RangeResult {
     // kvs: Vec<>
-    Rev: i64,
-    Count: isize,
+    pub rev: i64,
+    pub count: isize,
 }
 
 pub trait ReadView {
@@ -43,7 +43,7 @@ pub trait WriteView {
     // It also generates one event for each key delete in the event history.
     // if the `end` is nil, deleteRange deletes the key.
     // if the `end` is not nil, deleteRange deletes the keys in range [key, range_end).
-    fn DeleteRange(key: Vec<u8>, end: Vec<u8>) -> (i64, i64, i64);
+    fn delete_range(key: Vec<u8>, end: Vec<u8>) -> (i64, i64, i64);
 
     // Put puts the given key. value into the store. Put also takes additional argument lease to
     // attach a lease to a key-value pair as meta-data. KV implementation does not validate the lease
