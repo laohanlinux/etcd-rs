@@ -13,6 +13,8 @@
 // limitations under the License.
 use crate::raft::raftpb::raft::{ConfState, HardState, Entry, Snapshot};
 use thiserror::Error;
+use protobuf::Message;
+use bytes::{BytesMut, BufMut, Buf, Bytes};
 
 #[derive(Error, Debug)]
 pub enum StorageError {
@@ -20,7 +22,7 @@ pub enum StorageError {
     // index is unavailable because it predates the last snapshot.
     #[error("requested index is unavailable due to comaction")]
     Compacted,
-    // ErrSnapOutOfDate is returned by Storage.CreateSnapshot when a requested
+    // ErrSnapOutOfDate is returned by Storage.create_snapshot when a requested
     // index is older than the existing snapshot.
     #[error("requested index is older than the existing snapshot")]
     SnapshotOfDate,
@@ -107,11 +109,41 @@ impl MemoryStorage {
         Ok(())
     }
 
-    // CreateSnapshot makes a snapshot which can be retrieved with Snapshot() and
+    // create_snapshot makes a snapshot which can be retrieved with Snapshot() and
     // can be used to reconstruct the state at that point.
     // If any configuration changes have been made since the last compaction,
     // the result of the last ApplyConfigChange must be passed in.
-    pub fn CreateSnapshot(&mut self, i: u64, cs: ConfState, data: Vec<u8>) -> Result<Snapshot, StorageError> {
+    pub fn create_snapshot(&mut self, i: u64, cs: Option<ConfState>, data: Vec<u8>) -> Result<Snapshot, StorageError> {
+        if i <= self.snapshot.get_metadata().get_index() {
+            return Err(StorageError::SnapshotOfDate);
+        }
+        let offset = self.ents.first().unwrap().get_Index();
+        if i > self.last_index().unwrap() {
+            unimplemented!("snapshot {} is out of bound last_index({})", i, self.last_index().unwrap());
+        }
+        self.snapshot.mut_metadata().set_index(i);
+        self.snapshot.mut_metadata().set_term(self.ents[(i - offset) as usize].get_Term());
+        if cs.is_some() {
+            // TODO: what is it
+            self.snapshot.mut_metadata().set_conf_state(cs.unwrap());
+        }
+        self.snapshot.set_data(Bytes::from(data));
+        Ok(self.snapshot.clone())
+    }
+
+    // Compact discards all log entries prior to compactIndex.
+    // It is the application's responsibility to not attempt to compact an index
+    // greater than raftLog.applied.
+    pub fn compact(&mut self, compact_index: u64) -> Result<(), StorageError> {
+        let offset = self.ents.first().unwrap().get_Index();
+        if compact_index <= offset {
+            return Err(StorageError::Compacted);
+        }
+        if compact_index > self.last_index().unwrap() {
+            unimplemented!("compact {} is out of bound last_index({})", compact_index, self.last_index().unwrap())
+        }
+        let i = compact_index - offset;
+        let mut ents =
         Ok(())
     }
 }
