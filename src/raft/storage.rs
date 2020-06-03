@@ -142,8 +142,46 @@ impl MemoryStorage {
         if compact_index > self.last_index().unwrap() {
             unimplemented!("compact {} is out of bound last_index({})", compact_index, self.last_index().unwrap())
         }
-        let i = compact_index - offset;
-        let mut ents =
+        let i = (compact_index - offset) as usize;
+        let mut ents: Vec<Entry> = Vec::with_capacity(1 + self.ents.len() - i);
+        let mut first_entry = Entry::new();
+        first_entry.set_Term(self.ents[i].get_Term());
+        first_entry.set_Index(self.ents[i].get_Index());
+        ents.push(first_entry);
+        // TODO: why not include data
+        for entry in self.ents[i..].iter() {
+            ents.push(entry.clone());
+        }
+        self.ents = ents;
+        Ok(())
+    }
+
+    // Append the new entries to the storage
+    // TODO (xiangli): ensure that entries are continuous and
+    // entries[0].Index > self.entries[0].Index
+    pub fn append(&mut self, mut entries: Vec<Entry>) -> Result<(), StorageError> {
+        if entries.is_empty() {
+            return Ok(());
+        }
+        let first = self.first_index()?;
+        let last = entries[0].get_Index() + entries.len() as u64 - 1;
+
+        // shortcut if there is no new entry
+        if last < first {
+            return Ok(());
+        }
+        // truncate compacted entries
+        if first > entries[0].get_Index() {
+            entries.truncate(entries.len() - first as usize);
+            // entries = entries[(first - entries[0].get_Index()) as usize..].clone();
+        }
+
+        let offset = entries[0].get_Index() - self.ents[0].get_Index();
+        if offset < self.ents.len() as u64 {} else if offset == self.ents.len() as u64 {
+            self.ents.extend_from_slice(&entries);
+        } else {
+            unimplemented!("missing log entry [last: {}, append at: {}]", self.last_index()?, entries[0].get_Index());
+        }
         Ok(())
     }
 }
@@ -185,14 +223,22 @@ impl Storage for MemoryStorage {
     }
 
     fn last_index(&self) -> Result<u64, StorageError> {
-        Ok(self.ents.last().unwrap().get_Index())
+        Ok(self.ents[0].get_Index() + self.ents.len() as u64 - 1)
     }
 
     fn first_index(&self) -> Result<u64, StorageError> {
-        Ok(self.ents.first().unwrap().get_Index())
+        Ok(self.ents[0].get_Index() + 1)
     }
 
     fn snapshot(&self) -> Result<Snapshot, StorageError> {
         Ok(self.snapshot.clone())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn it_works() {
+        assert_eq!(2 + 2, 4);
     }
 }
