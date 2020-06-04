@@ -16,7 +16,7 @@ use thiserror::Error;
 use protobuf::Message;
 use bytes::{BytesMut, BufMut, Buf, Bytes};
 
-#[derive(Error, Debug)]
+#[derive(Error, Debug, PartialEq)]
 pub enum StorageError {
     // ErrCompacted is returned by Storage.Entries/Compact when a requested
     // index is unavailable because it predates the last snapshot.
@@ -83,6 +83,14 @@ impl MemoryStorage {
             snapshot: Default::default(),
             // When starting from scratch populate the list with a dummy entry at term zero.
             ents: vec![Entry::default()],
+        }
+    }
+
+    pub fn new_with_entries(entries: Vec<Entry>) -> Self {
+        MemoryStorage {
+            hard_state: Default::default(),
+            snapshot: Default::default(),
+            ents: entries,
         }
     }
 
@@ -212,7 +220,7 @@ impl Storage for MemoryStorage {
     }
     // term implements the Storage interface.
     fn term(&self, i: u64) -> Result<u64, StorageError> {
-        let offset = self.ents.first().unwrap().get_Index();
+        let offset = self.ents[0].get_Index();
         if i < offset {
             return Err(StorageError::Compacted);
         }
@@ -237,8 +245,70 @@ impl Storage for MemoryStorage {
 
 #[cfg(test)]
 mod tests {
+    use crate::raft::raftpb::raft::Entry;
+    use crate::raft::storage::{StorageError, MemoryStorage, Storage};
+
     #[test]
     fn it_works() {
         assert_eq!(2 + 2, 4);
+    }
+
+    #[test]
+    fn storage_term() {
+        let ents = vec![new_entry(3, 3), new_entry(4, 4), new_entry(5, 5)];
+        struct Arg {
+            i: u64,
+            w_err: Result<(), StorageError>,
+            w_term: u64,
+            w_panic: bool,
+        }
+        let tests = vec![Arg {
+            i: 2,
+            w_err: Err(StorageError::Compacted),
+            w_term: 0,
+            w_panic: false,
+        }, Arg {
+            i: 3,
+            w_err: Ok(()),
+            w_term: 3,
+            w_panic: false,
+        }, Arg {
+            i: 4,
+            w_err: Ok(()),
+            w_term: 4,
+            w_panic: false,
+        }, Arg {
+            i: 5,
+            w_err: Ok(()),
+            w_term: 5,
+            w_panic: false,
+        }, Arg {
+            i: 6,
+            w_err: Err(StorageError::Unavailable),
+            w_term: 0,
+            w_panic: false,
+        }];
+
+        for (i, tt) in tests.iter().enumerate() {
+            let mut s = MemoryStorage::new_with_entries(ents.clone());
+            match s.term(tt.i) {
+                Ok(term) => {}
+                Err(ref e)  if e == tt.w_err.as_ref().unwrap_err() => {}
+                Err(_) => unimplemented!()
+            }
+        }
+    }
+
+    #[test]
+    fn storage_entries() {
+        let ents = vec![new_entry(3, 3), new_entry(4, 4), new_entry(5, 5), new_entry(6, 6)];
+        let tests  = vec![(2, 4, u64::MAX, Err::<(), StorageError>(StorageError::Compacted), Vec:<Entry>new())];
+    }
+
+    fn new_entry(index: u64, term: u64) -> Entry {
+        let mut entry = Entry::new();
+        entry.set_Index(index);
+        entry.set_Term(term);
+        entry
     }
 }
