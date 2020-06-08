@@ -44,7 +44,8 @@ pub trait Storage {
     // Entries returns a slice of log entries in the range [lo, hi).
     // MaxSize limits the total size of the log entries returned, but
     // Entries returns at least one entry if any.
-    fn entries(&self, lo: u64, hi: u64) -> Result<Vec<Entry>, StorageError>;
+    // NOTE: entries zero is not use
+    fn entries(&self, lo: u64, hi: u64, limit: u64) -> Result<Vec<Entry>, StorageError>;
     // Term returns the term of entry i, which must be in the range
     // [FirstIndex()-1, LastIndex()]. The term of the entry before
     // FirstIndex is retained for matching purposes even though the
@@ -143,7 +144,7 @@ impl MemoryStorage {
     // It is the application's responsibility to not attempt to compact an index
     // greater than raftLog.applied.
     pub fn compact(&mut self, compact_index: u64) -> Result<(), StorageError> {
-        let offset = self.ents.first().unwrap().get_Index();
+        let offset = self.ents[0].get_Index();
         if compact_index <= offset {
             return Err(StorageError::Compacted);
         }
@@ -192,6 +193,20 @@ impl MemoryStorage {
         }
         Ok(())
     }
+
+    fn limit_size(ents: Vec<Entry>, max_size: u64) -> Vec<Entry> {
+        if ents.is_empty() {
+            return vec![];
+        }
+        let mut size = 0;
+        for limit in 0..ents.len() {
+            size += ents[limit].compute_size() as u64;
+            if size > max_size {
+                return ents[..limit].to_vec();
+            }
+        }
+        ents
+    }
 }
 
 impl Storage for MemoryStorage {
@@ -201,14 +216,19 @@ impl Storage for MemoryStorage {
     }
     // TODO: optimized
     // entries implements the Storage interface.
-    fn entries(&self, lo: u64, hi: u64) -> Result<Vec<Entry>, StorageError> {
-        let offset = self.ents.first().unwrap().get_Index();
+    fn entries(&self, lo: u64, hi: u64, limit: u64) -> Result<Vec<Entry>, StorageError> {
+        let offset = self.ents[0].get_Index();
         if lo <= offset {
             return Err(StorageError::Compacted);
         }
         if hi > self.ents.last().unwrap().get_Index() + 1 {
             unimplemented!("entries's hi({}) is out of bound last_index({})", lo, hi);
         }
+        // only contains dummy entries
+        if self.ents.len() == 1 {
+            return Err(StorageError::Compacted);
+        }
+
         let start = (lo - offset) as usize;
         let end = (hi - offset) as usize;
 
@@ -216,7 +236,7 @@ impl Storage for MemoryStorage {
         if self.ents.len() == 1 && !ents.is_empty() {
             return Err(StorageError::Unavailable);
         }
-        Ok(ents)
+        Ok(Self::limit_size(ents, limit))
     }
     // term implements the Storage interface.
     fn term(&self, i: u64) -> Result<u64, StorageError> {
@@ -247,6 +267,7 @@ impl Storage for MemoryStorage {
 mod tests {
     use crate::raft::raftpb::raft::Entry;
     use crate::raft::storage::{StorageError, MemoryStorage, Storage};
+    use protobuf::Message;
 
     #[test]
     fn it_works() {
@@ -302,7 +323,67 @@ mod tests {
     #[test]
     fn storage_entries() {
         let ents = vec![new_entry(3, 3), new_entry(4, 4), new_entry(5, 5), new_entry(6, 6)];
-        let tests  = vec![(2, 4, u64::MAX, Err::<(), StorageError>(StorageError::Compacted), Vec:<Entry>new())];
+        struct Arg {
+            lo: u64,
+            hi: u64,
+            max_size: u64,
+            w_err: Result<(), StorageError>,
+            w_entries: Vec<Entry>,
+        }
+        let tests = vec![Arg {
+            lo: 2,
+            hi: 6,
+            max_size: u64::MAX,
+            w_err: Err(StorageError::Compacted),
+            w_entries: vec![],
+        }, Arg {
+            lo: 3,
+            hi: 4,
+            max_size: u64::MAX,
+            w_err: Err(StorageError::Compacted),
+            w_entries: vec![],
+        }, Arg {
+            lo: 4,
+            hi: 5,
+            max_size: u64::MAX,
+            w_err: Ok(()),
+            w_entries: vec![new_entry(4, 4)],
+        }, Arg {
+            lo: 4,
+            hi: 6,
+            max_size: u64::MAX,
+            w_err: Ok(()),
+            w_entries: vec![new_entry(4, 4), new_entry(5, 5)],
+        }, Arg {
+            lo: 4,
+            hi: 7,
+            max_size: u64::MAX,
+            w_err: Ok(()),
+            w_entries: vec![new_entry(4, 4), new_entry(5, 5), new_entry(6, 6)],
+        }, Arg {
+            lo: 4,
+            hi: 7,
+            max_size: 0,
+            w_err: Ok(()),
+            w_entries: vec![new_entry(4, 4)],
+        }, Arg {
+            lo: 4,
+            hi: 7,
+            max_size: (ents[1].compute_size() + ents[2].compute_size()) as u64,
+            w_err: Ok(()),
+            w_entries: vec![new_entry(4, 4), new_entry(5, 5)],
+        }];
+        for (i, tt) in tests.iter().enumerate() {
+            let mut s = MemoryStorage::new_with_entries(ents.clone());
+            println!("{} => {}", i, tt.max_size);
+            match s.entries(tt.lo, tt.hi, tt.max_size) {
+                Ok(entries) => {
+                    assert_eq!(entries, tt.w_entries);
+                }
+                Err(ref e)  if e == tt.w_err.as_ref().unwrap_err() => {}
+                Err(_) => unimplemented!()
+            }
+        }
     }
 
     fn new_entry(index: u64, term: u64) -> Entry {
