@@ -122,7 +122,7 @@ impl MemoryStorage {
     // can be used to reconstruct the state at that point.
     // If any configuration changes have been made since the last compaction,
     // the result of the last ApplyConfigChange must be passed in.
-    pub fn create_snapshot(&mut self, i: u64, cs: Option<ConfState>, data: Vec<u8>) -> Result<Snapshot, StorageError> {
+    pub fn create_snapshot(&mut self, i: u64, cs: Option<ConfState>, data: Bytes) -> Result<Snapshot, StorageError> {
         if i <= self.snapshot.get_metadata().get_index() {
             return Err(StorageError::SnapshotOfDate);
         }
@@ -136,7 +136,7 @@ impl MemoryStorage {
             // TODO: what is it
             self.snapshot.mut_metadata().set_conf_state(cs.unwrap());
         }
-        self.snapshot.set_data(Bytes::from(data));
+        self.snapshot.set_data(data);
         Ok(self.snapshot.clone())
     }
 
@@ -152,16 +152,7 @@ impl MemoryStorage {
             unimplemented!("compact {} is out of bound last_index({})", compact_index, self.last_index().unwrap())
         }
         let i = (compact_index - offset) as usize;
-        let mut ents: Vec<Entry> = Vec::with_capacity(1 + self.ents.len() - i);
-        let mut first_entry = Entry::new();
-        first_entry.set_Term(self.ents[i].get_Term());
-        first_entry.set_Index(self.ents[i].get_Index());
-        ents.push(first_entry);
-        // TODO: why not include data
-        for entry in self.ents[i..].iter() {
-            ents.push(entry.clone());
-        }
-        self.ents = ents;
+        self.ents = self.ents.split_off(i);
         Ok(())
     }
 
@@ -173,7 +164,7 @@ impl MemoryStorage {
             return Ok(());
         }
         let first = self.first_index()?;
-        let last = entries[0].get_Index() + entries.len() as u64 - 1;
+        let last = entries.last().unwrap().get_Index();
 
         // shortcut if there is no new entry
         if last < first {
@@ -181,8 +172,7 @@ impl MemoryStorage {
         }
         // truncate compacted entries
         if first > entries[0].get_Index() {
-            entries.truncate(entries.len() - first as usize);
-            // entries = entries[(first - entries[0].get_Index()) as usize..].clone();
+            entries = entries.split_off(entries.len() - first as usize);
         }
 
         let offset = entries[0].get_Index() - self.ents[0].get_Index();
@@ -194,18 +184,21 @@ impl MemoryStorage {
         Ok(())
     }
 
+    // [0..max_size]
     fn limit_size(ents: Vec<Entry>, max_size: u64) -> Vec<Entry> {
         if ents.is_empty() {
             return vec![];
         }
-        let mut size = 0;
-        for limit in 0..ents.len() {
+        let mut size = ents[0].compute_size() as u64;
+        let mut limit = 1;
+        while limit < ents.len() {
             size += ents[limit].compute_size() as u64;
             if size > max_size {
-                return ents[..limit].to_vec();
+                break;
             }
+            limit += 1;
         }
-        ents
+        ents[..limit].to_vec()
     }
 }
 
@@ -265,9 +258,10 @@ impl Storage for MemoryStorage {
 
 #[cfg(test)]
 mod tests {
-    use crate::raft::raftpb::raft::Entry;
+    use crate::raft::raftpb::raft::{Entry, ConfChange, ConfState, Snapshot};
     use crate::raft::storage::{StorageError, MemoryStorage, Storage};
     use protobuf::Message;
+    use bytes::Bytes;
 
     #[test]
     fn it_works() {
@@ -372,10 +366,27 @@ mod tests {
             max_size: (ents[1].compute_size() + ents[2].compute_size()) as u64,
             w_err: Ok(()),
             w_entries: vec![new_entry(4, 4), new_entry(5, 5)],
+        }, Arg {
+            lo: 4,
+            hi: 7,
+            max_size: (ents[1].compute_size() + ents[2].compute_size()) as u64 + ents[3].compute_size() as u64 / 2,
+            w_err: Ok(()),
+            w_entries: vec![new_entry(4, 4), new_entry(5, 5)],
+        }, Arg {
+            lo: 4,
+            hi: 7,
+            max_size: (ents[1].compute_size() + ents[2].compute_size()) as u64 + ents[3].compute_size() as u64 - 1,
+            w_err: Ok(()),
+            w_entries: vec![new_entry(4, 4), new_entry(5, 5)],
+        }, Arg {
+            lo: 4,
+            hi: 7,
+            max_size: (ents[1].compute_size() + ents[2].compute_size() + ents[3].compute_size()) as u64,
+            w_err: Ok(()),
+            w_entries: vec![new_entry(4, 4), new_entry(5, 5), new_entry(6, 6)],
         }];
         for (i, tt) in tests.iter().enumerate() {
             let mut s = MemoryStorage::new_with_entries(ents.clone());
-            println!("{} => {}", i, tt.max_size);
             match s.entries(tt.lo, tt.hi, tt.max_size) {
                 Ok(entries) => {
                     assert_eq!(entries, tt.w_entries);
@@ -386,10 +397,192 @@ mod tests {
         }
     }
 
+    #[test]
+    fn storage_last_index() {
+        let ents = vec![new_entry(3, 3), new_entry(4, 4), new_entry(5, 5)];
+        let mut s = MemoryStorage::new_with_entries(ents);
+        assert_eq!(s.last_index(), Ok(5));
+        s.append(vec![new_entry(6, 6)]);
+        assert_eq!(s.last_index(), Ok(6));
+    }
+
+    #[test]
+    fn storage_first_index() {
+        let ents = vec![new_entry(3, 3), new_entry(4, 4), new_entry(5, 5)];
+        let mut s = MemoryStorage::new_with_entries(ents);
+        assert_eq!(s.first_index(), Ok(4));
+        s.compact(4);
+        assert_eq!(s.first_index(), Ok(5));
+        println!("{:?}", s.last_index());
+    }
+
+    #[test]
+    fn storage_compact() {
+        let ents = vec![new_entry(3, 3), new_entry(4, 4), new_entry(5, 5)];
+        struct Arg {
+            i: u64,
+            w_err: Result<(), StorageError>,
+            w_index: u64,
+            w_term: u64,
+            w_len: usize,
+        }
+        let tests = vec![Arg {
+            i: 2,
+            w_err: Err(StorageError::Compacted),
+            w_index: 3,
+            w_term: 3,
+            w_len: 3,
+        }, Arg {
+            i: 3,
+            w_err: Err(StorageError::Compacted),
+            w_index: 3,
+            w_term: 3,
+            w_len: 3,
+        }, Arg {
+            i: 4,
+            w_err: Ok(()),
+            w_index: 4,
+            w_term: 4,
+            w_len: 2,
+        }, Arg {
+            i: 5,
+            w_err: Ok(()),
+            w_index: 5,
+            w_term: 5,
+            w_len: 1,
+        }];
+        for (i, tt) in tests.iter().enumerate() {
+            let mut s = MemoryStorage::new_with_entries(ents.clone());
+            match s.compact(tt.i) {
+                Ok(()) => {
+                    assert_eq!(s.ents[0].get_Index(), tt.w_index);
+                    assert_eq!(s.ents[0].get_Term(), tt.w_term);
+                    assert_eq!(s.ents.len(), tt.w_len);
+                }
+                Err(ref e)  if e == tt.w_err.as_ref().unwrap_err() => {}
+                Err(_) => unimplemented!()
+            }
+        }
+    }
+
+    #[test]
+    fn storage_create_snapshot() {
+        let ents = vec![new_entry(3, 3), new_entry(4, 4), new_entry(5, 5)];
+        let mut cs = ConfState::new();
+        cs.set_voters(vec![1, 2, 3]);
+        struct Arg {
+            i: u64,
+            w_err: Result<(), StorageError>,
+            w_snap: Snapshot,
+        }
+
+        let data = Bytes::from("data");
+        let tests = vec![Arg {
+            i: 4,
+            w_err: Ok(()),
+            w_snap: new_snapshot(data.clone(), 4, 4, cs.clone()),
+        }, Arg {
+            i: 5,
+            w_err: Ok(()),
+            w_snap: new_snapshot(data.clone(), 5, 5, cs.clone()),
+        }];
+
+        for (i, tt) in tests.iter().enumerate() {
+            let mut s = MemoryStorage::new_with_entries(ents.clone());
+            match s.create_snapshot(tt.i, Some(cs.clone()), data.clone()) {
+                Ok(snapshot) => {
+                    assert_eq!(snapshot, tt.w_snap);
+                }
+                Err(ref e)  if e == tt.w_err.as_ref().unwrap_err() => {}
+                Err(_) => unimplemented!()
+            }
+        }
+    }
+
+    #[test]
+    fn storage_append() {
+        let ents = vec![new_entry(3, 3), new_entry(4, 4), new_entry(5, 5)];
+        struct Arg {
+            entries: Vec<Entry>,
+            w_err: Result<(), StorageError>,
+            w_entries: Vec<Entry>,
+        }
+        let tests = vec![Arg {
+            entries: vec![new_entry(1, 1), new_entry(2, 2)],
+            w_err: Ok(()),
+            w_entries: vec![new_entry(3, 3), new_entry(4, 4), new_entry(5, 5)],
+        }, Arg {
+            entries: vec![new_entry(3, 3), new_entry(4, 4), new_entry(5, 5)],
+            w_err: Ok(()),
+            w_entries: vec![new_entry(3, 3), new_entry(4, 4), new_entry(5, 5)],
+        }, Arg {
+            entries: vec![new_entry(3, 3), new_entry(4, 6), new_entry(5, 6)],
+            w_err: Ok(()),
+            w_entries: vec![new_entry(3, 3), new_entry(4, 6), new_entry(5, 6)],
+        }, Arg {
+            entries: vec![new_entry(3, 3), new_entry(4, 4), new_entry(5, 5), new_entry(6, 5)],
+            w_err: Ok(()),
+            w_entries: vec![new_entry(3, 3), new_entry(4, 4), new_entry(5, 5), new_entry(6, 5)],
+        }, Arg {
+            // truncate incoming entries, truncate the existing entries and append
+            entries: vec![new_entry(2, 3), new_entry(3, 3), new_entry(4, 5)],
+            w_err: Ok(()),
+            w_entries: vec![new_entry(3, 3), new_entry(4, 5)],
+        }, Arg {
+            // truncate the existing entries and append
+            entries: vec![new_entry(4, 5)],
+            w_err: Ok(()),
+            w_entries: vec![new_entry(3, 3), new_entry(4, 5)],
+        }, Arg {
+            // direct append
+            entries: vec![new_entry(6, 5)],
+            w_err: Ok(()),
+            w_entries: vec![new_entry(3, 3), new_entry(4, 4), new_entry(5, 5), new_entry(6, 5)],
+        }];
+        for (i, tt) in tests.iter().enumerate() {
+            let mut s = MemoryStorage::new_with_entries(ents.clone());
+            match s.append(tt.entries.clone()) {
+                Ok(()) => {
+                    assert_eq!(tt.entries, s.ents);
+                }
+                Err(ref e)  if e == tt.w_err.as_ref().unwrap_err() => {}
+                Err(_) => unimplemented!()
+            }
+        }
+    }
+
+    #[test]
+    fn storage_apply_snapshot() {
+        let mut cs = ConfState::new();
+        cs.set_voters(vec![1, 2, 3]);
+        let data = Bytes::from("data");
+        let tests = vec![new_snapshot(data.clone(), 4, 4, cs.clone()), new_snapshot(data.clone(), 3, 3, cs.clone())];
+        let mut s = MemoryStorage::new();
+
+        // Apply Snapshot successful
+        let i = 0;
+        let tt = &tests[i];
+        assert!(s.apply_snapshot(tt.clone()).is_ok());
+
+        // Apply Snapshot fails due to SnapOutDate
+        let i = 1;
+        let tt = &tests[i];
+        assert_eq!(s.apply_snapshot(tt.clone()), Err(StorageError::SnapshotOfDate));
+    }
+
     fn new_entry(index: u64, term: u64) -> Entry {
         let mut entry = Entry::new();
         entry.set_Index(index);
         entry.set_Term(term);
         entry
+    }
+
+    fn new_snapshot(data: Bytes, index: u64, term: u64, cs: ConfState) -> Snapshot {
+        let mut snapshot = Snapshot::new();
+        snapshot.set_data(data);
+        snapshot.mut_metadata().set_index(index);
+        snapshot.mut_metadata().set_term(term);
+        snapshot.mut_metadata().set_conf_state(cs);
+        snapshot
     }
 }
