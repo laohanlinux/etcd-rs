@@ -11,7 +11,37 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-pub struct RawNode {}
+
+
+use crate::raft::tracker::state::StateType;
+use crate::raft::raft::Raft;
+use crate::raft::storage::Storage;
+use crate::raft::raftpb::raft::HardState;
+
+#[derive(Error, Debug, PartialEq)]
+pub enum RawRaftError {
+    // ErrStepLocalMsg is returned when try to step a local raft message
+    #[error("raft: cannot step raft local message")]
+    StepLocalMsg,
+    // ErrStepPeerNotFound is returned when try to step a response message
+    // but there is no peer found in raft.Prs for that node.
+    #[error("raft: cannot step as peer not found")]
+    StepPeerNotFound,
+}
+
+// SoftState provides state that is useful for logging and debugging.
+// The state is volatile and does not need to be persisted to the WAL.
+pub struct SoftState {
+    // must use atomic operations to access; keep 64-bit aligned
+    pub raft_state: StateType,
+    pub lead: u64,
+}
+
+pub struct RawNode<S: Storage> {
+    raft: Raft<S>,
+    prev_soft_st: SoftState,
+    prev_hard_st: HardState,
+}
 
 impl RawNode {
     // TODO
@@ -41,14 +71,9 @@ impl RawNode {
 
     // TODO
     // TransferLeader tris=es to transfer leadership to the given transferee.
-    pub fn transfer_leader(&self, transferee: u64) {}
+    pub fn transfer_leader(&mut self, transferee: u64) {}
 }
 
-// SoftState provides state that is useful for logging and debugging.
-// The state is volatile and does not need to be persisted to the WAL.
-pub struct SoftState {
-    pub lead: u64, // must use atomic operations to access; keep 64-bit aligned
-}
 
 // Ready encapsulates
 pub struct Ready {}
