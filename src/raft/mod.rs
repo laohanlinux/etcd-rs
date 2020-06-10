@@ -6,3 +6,4 @@ pub mod tracker;
 pub mod rawnode;
 pub mod log;
 pub mod raftpb;
+pub mod raft;
