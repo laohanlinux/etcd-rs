@@ -7,3 +7,4 @@ pub mod rawnode;
 pub mod log;
 pub mod raftpb;
 pub mod raft;
+pub mod util;

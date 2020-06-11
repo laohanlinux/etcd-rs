@@ -8,6 +8,7 @@ use crate::raft::raftpb::raft::Message;
 pub const NONE: u64 = 0;
 
 // State type represents the role of a node in a cluster.
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum State {
     Follower,
     Candidate,
@@ -23,7 +24,7 @@ pub enum RafeError {
 }
 
 // Config contains the parameters to start a raft.
-struct Config<S: Storage> {
+pub struct Config<S: Storage> {
     // id is the identify of the local raft. id cannot be 0;
     id: u64,
 
@@ -77,13 +78,14 @@ impl<S: Storage> Config<S> {
 
 // Progress represents a follower's progress in the view of the leader. Leader maintains
 // progress of all followers, and sends entries to the follower based on its progress.
+#[derive(Clone)]
 pub struct Progress {
     pub _match: u64,
     pub next: u64,
 }
 
 pub struct Raft<S: Storage> {
-    id: u64,
+    pub(crate) id: u64,
     pub term: u64,
     pub vote: u64,
     // the log
@@ -141,12 +143,12 @@ impl<S: Storage> Raft<S> {
     }
 
     // tick advances the interval logical clock by a single tick.
-    fn tick(&mut self) {
+    pub(crate) fn tick(&mut self) {
         // Your Code Here (2A).
     }
 
     // become_follower transform this peer's state to follower
-    fn become_follower(&mut self, term: u64, lead: u64) {
+    pub(crate) fn become_follower(&mut self, term: u64, lead: u64) {
         // Your Code Here (2A).
     }
 
@@ -163,7 +165,7 @@ impl<S: Storage> Raft<S> {
 
     // Step the entrance of handle message, see `MessageType`
     // on `eraft.proto`. for what msgs should be handled
-    pub fn step(&mut self) -> Result<(), String> {
+    pub fn step(&mut self, m: Message) -> Result<(), String> {
         // Your Code Here (2A).
         match self.state {
             State::Leader => {}
