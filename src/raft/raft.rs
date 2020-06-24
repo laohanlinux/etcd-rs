@@ -3,6 +3,7 @@ use thiserror::Error;
 use crate::raft::log::RaftLog;
 use std::collections::HashMap;
 use crate::raft::raftpb::raft::Message;
+use crate::raft::raftpb::raft::MessageType::{MsgVoteResp, MsgPreVote};
 
 // NONE is a placeholder node ID used when there is no leader.
 pub const NONE: u64 = 0;
@@ -167,6 +168,14 @@ impl<S: Storage> Raft<S> {
     // on `eraft.proto`. for what msgs should be handled
     pub fn step(&mut self, m: Message) -> Result<(), String> {
         // Your Code Here (2A).
+        let term = m.get_term();
+        if term == 0 {
+            // local message
+        } else if term > self.term {
+            if m.get_field_type() == MsgVoteResp || m.get_field_type() == MsgPreVote {
+
+            }
+        }
         match self.state {
             State::Leader => {}
             State::Follower => {}

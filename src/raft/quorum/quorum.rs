@@ -14,9 +14,9 @@ pub trait AckedIndexer {
     fn acked_index(&self, voter_id: &u64) -> Option<&Index>;
 }
 
-struct mapAckIndexer(HashMap<u64, Index>);
+struct MapAckIndexer(HashMap<u64, Index>);
 
-impl AckedIndexer for mapAckIndexer {
+impl AckedIndexer for MapAckIndexer {
     fn acked_index(&self, voter_id: &u64) -> Option<&Index> {
         self.0.get(voter_id)
     }

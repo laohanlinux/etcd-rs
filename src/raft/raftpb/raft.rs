@@ -3055,7 +3055,7 @@ static file_descriptor_proto_data: &'static [u8] = b"\
     \n\x0eConfChangeType\x12\x15\n\x11ConfChangeAddNode\x10\0\x12\x18\n\x14C\
     onfChangeRemoveNode\x10\x01\x12\x18\n\x14ConfChangeUpdateNode\x10\x02\
     \x12\x1c\n\x18ConfChangeAddLearnerNode\x10\x03B\x14\xd0\xe2\x1e\x01\xc8\
-    \xe1\x1e\0\xc8\xe2\x1e\x01\xe0\xe2\x1e\x01\xd0\xe1\x1e\0\
+    \xe2\x1e\x01\xc8\xe1\x1e\0\xd0\xe1\x1e\0\xe0\xe2\x1e\x01\
 ";
 
 static mut file_descriptor_proto_lazy: ::protobuf::lazy::Lazy<::protobuf::descriptor::FileDescriptorProto> = ::protobuf::lazy::Lazy::INIT;
