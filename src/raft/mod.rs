@@ -5,6 +5,7 @@ pub mod quorum;
 pub mod tracker;
 pub mod rawnode;
 pub mod log;
+pub mod unstable;
 pub mod raftpb;
 pub mod raft;
 pub mod util;
