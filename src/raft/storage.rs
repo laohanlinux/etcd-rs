@@ -172,11 +172,14 @@ impl MemoryStorage {
         }
         // truncate compacted entries
         if first > entries[0].get_Index() {
-            entries = entries.split_off(entries.len() - first as usize);
+            entries = entries.split_off((first - entries[0].get_Index()) as usize);
         }
 
         let offset = entries[0].get_Index() - self.ents[0].get_Index();
-        if offset < self.ents.len() as u64 {} else if offset == self.ents.len() as u64 {
+        if offset < self.ents.len() as u64 {
+            self.ents.split_off(offset as usize);
+            self.ents.extend_from_slice(&entries);
+        } else if offset == self.ents.len() as u64 {
             self.ents.extend_from_slice(&entries);
         } else {
             unimplemented!("missing log entry [last: {}, append at: {}]", self.last_index()?, entries[0].get_Index());
@@ -541,9 +544,10 @@ mod tests {
         }];
         for (i, tt) in tests.iter().enumerate() {
             let mut s = MemoryStorage::new_with_entries(ents.clone());
+            println!("{}", i);
             match s.append(tt.entries.clone()) {
                 Ok(()) => {
-                    assert_eq!(tt.entries, s.ents);
+                    assert_eq!(tt.w_entries, s.ents);
                 }
                 Err(ref e)  if e == tt.w_err.as_ref().unwrap_err() => {}
                 Err(_) => unimplemented!()
