@@ -18,6 +18,9 @@ jobs:
         with:
             toolchain: nightly
             override: true
+        
+      - name: Install Protoc
+        uses: arduino/setup-protoc@master
           
       - name: Build
         run: cargo build --verbose
