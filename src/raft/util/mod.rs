@@ -13,7 +13,7 @@
 // limitations under the License.
 
 
-use crate::raft::raftpb::raft::{MessageType, HardState};
+use crate::raft::raftpb::raft::{MessageType, HardState, Entry};
 
 pub fn is_local_message(msg_type: MessageType) -> bool {
     msg_type == MessageType::MsgHup || msg_type == MessageType::MsgBeat
@@ -27,4 +27,21 @@ pub fn is_response_message(msg_type: MessageType) -> bool {
 // TODO:
 pub fn is_hard_state_equal(a: &HardState, b: &HardState) -> bool {
     a.get_term() == b.get_term() && a.get_vote() == b.get_vote() || a.get_commit() == b.get_commit()
+}
+
+// [0..max_size]
+pub fn limit_size(ents: Vec<Entry>, max_size: u64) -> Vec<Entry> {
+    if ents.is_empty() {
+        return vec![];
+    }
+    let mut size = ents[0].compute_size() as u64;
+    let mut limit = 1;
+    while limit < ents.len() {
+        size += ents[limit].compute_size() as u64;
+        if size > max_size {
+            break;
+        }
+        limit += 1;
+    }
+    ents[..limit].to_vec()
 }

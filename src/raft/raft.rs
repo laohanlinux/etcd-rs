@@ -7,6 +7,7 @@ use crate::raft::raftpb::raft::MessageType::{MsgVoteResp, MsgPreVote};
 
 // NONE is a placeholder node ID used when there is no leader.
 pub const NONE: u64 = 0;
+pub const NO_LIMIT: u64 = u64::MAX;
 
 // State type represents the role of a node in a cluster.
 #[derive(Debug, Clone, Copy, PartialEq)]

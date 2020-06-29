@@ -22,8 +22,8 @@ pub(crate) struct Unstable {
     // the incoming unstable snapshot, if any.
     snapshot: Option<Snapshot>,
     // all entries that have not been yet been written to storage.
-    entries: Vec<Entry>,
-    offset: u64,
+    pub(crate) entries: Vec<Entry>,
+    pub(crate) offset: u64,
 }
 
 impl Unstable {
@@ -127,7 +127,7 @@ impl Unstable {
         }
     }
 
-    fn slice(&self, lo: u64, hi: u64) -> Vec<Entry> {
+    pub(crate) fn slice(&self, lo: u64, hi: u64) -> Vec<Entry> {
         self.must_check_out_of_bounds(lo, hi);
         self.entries[(lo - self.offset) as usize..(hi - self.offset) as usize].to_vec()
     }
@@ -339,7 +339,7 @@ mod tests {
             ), // stable to old entry
         ];
         for (i, (entries, offset, snapshot, index, term, w_offset, w_len)) in
-            tests.iter().enumerate()
+        tests.iter().enumerate()
         {
             let mut u = Unstable {
                 snapshot: snapshot.clone(),
