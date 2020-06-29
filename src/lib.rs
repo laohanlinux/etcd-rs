@@ -1,12 +1,13 @@
 #![feature(is_sorted)]
 
-#[macro_use] extern crate log;
+#[macro_use]
+extern crate log;
 
 use std::collections::HashMap;
 
-pub mod raft;
-pub mod mvcc;
 pub mod lease;
+pub mod mvcc;
+pub mod raft;
 
 #[cfg(test)]
 mod tests {

@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::raft::raftpb::raft::{Snapshot, Entry};
+use crate::raft::raftpb::raft::{Entry, Snapshot};
 
 // unstable.entries[i] has raft log position i+unstable.offset.
 // Note that unstable.offset may be less than highest log
@@ -30,7 +30,9 @@ impl Unstable {
     // maybe_first_index returns the index of the first possible entry in entries
     // if it has a snapshot.
     pub(crate) fn maybe_first_index(&self) -> Option<u64> {
-        self.snapshot.as_ref().map(|snapshot| snapshot.get_metadata().get_index() + 1)
+        self.snapshot
+            .as_ref()
+            .map(|snapshot| snapshot.get_metadata().get_index() + 1)
     }
 
     // maybe_last_index returns last index if it has at least one
@@ -39,7 +41,9 @@ impl Unstable {
         if !self.entries.is_empty() {
             return Some(self.offset + self.entries.len() as u64 - 1);
         }
-        self.snapshot.as_ref().map(|snapshot| snapshot.get_metadata().get_index())
+        self.snapshot
+            .as_ref()
+            .map(|snapshot| snapshot.get_metadata().get_index())
     }
 
     // maybe_term returns the term of the entry at index i, if there
@@ -58,12 +62,15 @@ impl Unstable {
                 if i > index {
                     None
                 } else {
-                    Some(self.entries.get((i - self.offset) as usize).unwrap().get_Term())
+                    Some(
+                        self.entries
+                            .get((i - self.offset) as usize)
+                            .unwrap()
+                            .get_Term(),
+                    )
                 }
             }
-            None => {
-                None
-            }
+            None => None,
         }
     }
 
@@ -132,14 +139,17 @@ impl Unstable {
         }
         let upper = self.offset + self.entries.len() as u64;
         if lo < self.offset || hi > upper {
-            panic!("unstable.slice[{}, {}] out of bound [{}, {}]", lo, hi, self.offset, upper);
+            panic!(
+                "unstable.slice[{}, {}] out of bound [{}, {}]",
+                lo, hi, self.offset, upper
+            );
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::raft::raftpb::raft::{Snapshot, Entry};
+    use crate::raft::raftpb::raft::{Entry, Snapshot};
     use crate::raft::unstable::Unstable;
 
     #[test]
@@ -152,9 +162,12 @@ mod tests {
         // (entries, offset, snapshot, w_ok, w_index)
         let tests = vec![
             // no snapshot
-            (vec![new_entry(5, 1)], 0, None, false, 0), (vec![], 0, None, false, 0),
+            (vec![new_entry(5, 1)], 0, None, false, 0),
+            (vec![], 0, None, false, 0),
             // has snapshot
-            (vec![new_entry(5, 1)], 5, Some(new_snapshot(4, 1)), true, 5), (vec![], 5, Some(new_snapshot(4, 1)), true, 5)];
+            (vec![new_entry(5, 1)], 5, Some(new_snapshot(4, 1)), true, 5),
+            (vec![], 5, Some(new_snapshot(4, 1)), true, 5),
+        ];
         for (i, (entries, offset, snapshot, w_ok, w_index)) in tests.iter().enumerate() {
             let mut u = Unstable {
                 snapshot: snapshot.clone(),
@@ -176,6 +189,11 @@ mod tests {
         let tests = vec![
             // last in entries
             (vec![new_entry(5, 1)], 5, None, true, 5),
+            (vec![new_entry(5, 1)], 5, Some(new_snapshot(4, 1)), true, 5),
+            // last in snapshot
+            (vec![], 5, Some(new_snapshot(4, 1)), true, 4),
+            // empty unstable
+            (vec![], 0, None, false, 0),
         ];
         for (i, (entries, offset, snapshot, w_ok, w_index)) in tests.iter().enumerate() {
             let mut u = Unstable {
@@ -192,11 +210,221 @@ mod tests {
         }
     }
 
+    #[test]
+    fn it_unstable_maybe_term() {
+        // (entries, offset, snapshot, index, w_ok, w_term)
+        let tests = vec![
+            // term from entries
+            (vec![new_entry(5, 1)], 5, None, 5, true, 1),
+            (vec![new_entry(5, 1)], 5, None, 6, false, 0),
+            (
+                vec![new_entry(5, 1)],
+                5,
+                Some(new_snapshot(4, 1)),
+                5,
+                true,
+                1,
+            ),
+            (
+                vec![new_entry(5, 1)],
+                5,
+                Some(new_snapshot(4, 1)),
+                6,
+                false,
+                0,
+            ),
+            // term from snapshot
+            (
+                vec![new_entry(5, 1)],
+                5,
+                Some(new_snapshot(4, 1)),
+                4,
+                true,
+                1,
+            ),
+            (
+                vec![new_entry(5, 1)],
+                5,
+                Some(new_snapshot(4, 1)),
+                3,
+                false,
+                0,
+            ),
+            (vec![], 5, Some(new_snapshot(4, 1)), 5, false, 0),
+            (vec![], 5, Some(new_snapshot(4, 1)), 4, true, 1),
+            (vec![], 0, None, 5, false, 0),
+        ];
+        for (i, (entries, offset, snapshot, index, w_ok, w_term)) in tests.iter().enumerate() {
+            let mut u = Unstable {
+                snapshot: snapshot.clone(),
+                entries: entries.clone(),
+                offset: *offset,
+            };
+            match u.maybe_term(*index) {
+                Some(i) => assert_eq!(i, *w_term),
+                None => assert!(!*w_ok),
+            }
+        }
+    }
+
+    #[test]
+    fn it_unstable_restore() {
+        let mut u = Unstable {
+            snapshot: Some(new_snapshot(4, 1)),
+            entries: vec![new_entry(5, 1)],
+            offset: 5,
+        };
+        let mut s = new_snapshot(6, 2);
+        u.restore(s.clone());
+        assert_eq!(u.offset, s.get_metadata().get_index() + 1);
+        assert!(u.entries.is_empty());
+        assert_eq!(u.snapshot.unwrap(), s);
+    }
+
+    #[test]
+    fn it_unstable_stable_to() {
+        // (entries, offset, snapshot, index, term, w_offset, w_len)
+        let tests = vec![
+            (vec![], 0, None, 5, 1, 0, 0),
+            (vec![new_entry(5, 1)], 5, None, 5, 1, 6, 0), // stable to the first entry
+            (new_batch_entry(vec![(5, 1), (6, 1)]), 5, None, 5, 1, 6, 1), // stable to the first entry
+            (vec![new_entry(6, 2)], 6, None, 6, 1, 6, 1), // stable to the first entry and term mismatch
+            (vec![new_entry(5, 1)], 5, None, 4, 1, 5, 1), // stable to old entry
+            (vec![new_entry(5, 1)], 5, None, 4, 2, 5, 1), // stable to old entry
+            // with snapshot
+            (
+                vec![new_entry(5, 1)],
+                5,
+                Some(new_snapshot(4, 1)),
+                5,
+                1,
+                6,
+                0,
+            ), // stable to the first entry
+            (
+                new_batch_entry(vec![(5, 1), (6, 1)]),
+                5,
+                Some(new_snapshot(4, 1)),
+                5,
+                1,
+                6,
+                1,
+            ), // stable to the first entry
+            (
+                vec![new_entry(6, 2)],
+                6,
+                Some(new_snapshot(5, 1)),
+                6,
+                1,
+                6,
+                1,
+            ), // stable to the first entry and term mismatch
+            (
+                vec![new_entry(5, 1)],
+                5,
+                Some(new_snapshot(4, 1)),
+                4,
+                1,
+                5,
+                1,
+            ), // stable to snapshot
+            (
+                vec![new_entry(5, 2)],
+                5,
+                Some(new_snapshot(4, 2)),
+                4,
+                1,
+                5,
+                1,
+            ), // stable to old entry
+        ];
+        for (i, (entries, offset, snapshot, index, term, w_offset, w_len)) in
+            tests.iter().enumerate()
+        {
+            let mut u = Unstable {
+                snapshot: snapshot.clone(),
+                entries: entries.clone(),
+                offset: *offset,
+            };
+            u.stable_to(*index, *term);
+            assert_eq!(u.offset, *w_offset);
+            assert_eq!(u.entries.len(), *w_len);
+        }
+    }
+
+    #[test]
+    fn it_unstable_stable_truncate_and_append() {
+        // (entries, offset, snapshot, to_append, w_offset, w_entries)
+        let tests: Vec<(_, _, Option<Snapshot>, _, _, _)> = vec![
+            // append to the end
+            (
+                vec![new_entry(5, 1)],
+                5,
+                None,
+                new_batch_entry(vec![(6, 1), (7, 1)]),
+                5,
+                new_batch_entry(vec![(5, 1), (6, 1), (7, 1)]),
+            ),
+            // replace the unstable entries
+            (
+                vec![new_entry(5, 1)],
+                5,
+                None,
+                new_batch_entry(vec![(5, 2), (6, 2)]),
+                5,
+                new_batch_entry(vec![(5, 2), (6, 2)]),
+            ),
+            (
+                vec![new_entry(5, 1)],
+                5,
+                None,
+                new_batch_entry(vec![(4, 2), (5, 2), (6, 2)]),
+                4,
+                new_batch_entry(vec![(4, 2), (5, 2), (6, 2)]),
+            ),
+            // truncate the existing entries and append
+            (
+                new_batch_entry(vec![(5, 1), (6, 1), (7, 1)]),
+                5,
+                None,
+                new_batch_entry(vec![(6, 2)]),
+                5,
+                new_batch_entry(vec![(5, 1), (6, 2)]),
+            ),
+            (
+                new_batch_entry(vec![(5, 1), (6, 1), (7, 1)]),
+                5,
+                None,
+                new_batch_entry(vec![(7, 2), (8, 2)]),
+                5,
+                new_batch_entry(vec![(5, 1), (6, 1), (7, 2), (8, 2)]),
+            ),
+        ];
+
+        for (entries, offset, snapshot, to_append, w_offset, w_entries) in tests {
+            let mut u = Unstable {
+                snapshot,
+                entries,
+                offset,
+            };
+            u.truncate_and_append(to_append.as_slice());
+            assert_eq!(u.offset, w_offset);
+            assert_eq!(u.entries, w_entries);
+        }
+    }
+
     fn new_entry(index: u64, term: u64) -> Entry {
         let mut entry = Entry::new();
         entry.set_Term(term);
         entry.set_Index(index);
         entry
+    }
+
+    fn new_batch_entry(batch: Vec<(u64, u64)>) -> Vec<Entry> {
+        batch
+            .iter()
+            .map(|(index, term)| new_entry(*index, *term))
+            .collect()
     }
 
     fn new_snapshot(index: u64, term: u64) -> Snapshot {
