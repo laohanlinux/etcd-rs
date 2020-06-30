@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
+use protobuf::Message;
 use crate::raft::raftpb::raft::{MessageType, HardState, Entry};
 
 pub fn is_local_message(msg_type: MessageType) -> bool {

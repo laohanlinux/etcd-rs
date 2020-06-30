@@ -178,7 +178,7 @@ impl MemoryStorage {
 
         let offset = entries[0].get_Index() - self.ents[0].get_Index();
         if offset < self.ents.len() as u64 {
-            self.ents.split_off(offset as usize);
+            self.ents.drain((offset as usize)..);
             self.ents.extend_from_slice(&entries);
         } else if offset == self.ents.len() as u64 {
             self.ents.extend_from_slice(&entries);
