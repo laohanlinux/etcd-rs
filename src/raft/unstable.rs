@@ -18,12 +18,13 @@ use crate::raft::raftpb::raft::{Entry, Snapshot};
 // Note that unstable.offset may be less than highest log
 // position in storage; this means that the next write to storage
 // might need to truncate the log before persisting unstable.entries.
+#[derive(Default)]
 pub(crate) struct Unstable {
     // the incoming unstable snapshot, if any.
-    snapshot: Option<Snapshot>,
+    pub(crate) snapshot: Option<Snapshot>,
     // all entries that have not been yet been written to storage.
-    entries: Vec<Entry>,
-    offset: u64,
+    pub(crate) entries: Vec<Entry>,
+    pub(crate) offset: u64,
 }
 
 impl Unstable {
@@ -127,7 +128,7 @@ impl Unstable {
         }
     }
 
-    fn slice(&self, lo: u64, hi: u64) -> Vec<Entry> {
+    pub(crate) fn slice(&self, lo: u64, hi: u64) -> Vec<Entry> {
         self.must_check_out_of_bounds(lo, hi);
         self.entries[(lo - self.offset) as usize..(hi - self.offset) as usize].to_vec()
     }

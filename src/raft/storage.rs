@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 use crate::raft::raftpb::raft::{ConfState, HardState, Entry, Snapshot};
+use crate::raft::util::limit_size;
 use thiserror::Error;
 use protobuf::Message;
 use bytes::{BytesMut, BufMut, Buf, Bytes};
@@ -177,7 +178,7 @@ impl MemoryStorage {
 
         let offset = entries[0].get_Index() - self.ents[0].get_Index();
         if offset < self.ents.len() as u64 {
-            self.ents.split_off(offset as usize);
+            self.ents.drain((offset as usize)..);
             self.ents.extend_from_slice(&entries);
         } else if offset == self.ents.len() as u64 {
             self.ents.extend_from_slice(&entries);
@@ -185,23 +186,6 @@ impl MemoryStorage {
             unimplemented!("missing log entry [last: {}, append at: {}]", self.last_index()?, entries[0].get_Index());
         }
         Ok(())
-    }
-
-    // [0..max_size]
-    fn limit_size(ents: Vec<Entry>, max_size: u64) -> Vec<Entry> {
-        if ents.is_empty() {
-            return vec![];
-        }
-        let mut size = ents[0].compute_size() as u64;
-        let mut limit = 1;
-        while limit < ents.len() {
-            size += ents[limit].compute_size() as u64;
-            if size > max_size {
-                break;
-            }
-            limit += 1;
-        }
-        ents[..limit].to_vec()
     }
 }
 
@@ -232,7 +216,7 @@ impl Storage for MemoryStorage {
         if self.ents.len() == 1 && !ents.is_empty() {
             return Err(StorageError::Unavailable);
         }
-        Ok(Self::limit_size(ents, limit))
+        Ok(limit_size(ents, limit))
     }
     // term implements the Storage interface.
     fn term(&self, i: u64) -> Result<u64, StorageError> {
