@@ -173,7 +173,7 @@ impl MemoryStorage {
         }
         // truncate compacted entries
         if first > entries[0].get_Index() {
-            entries = entries.split_off((first - entries[0].get_Index()) as usize);
+            entries.drain(..(first - entries[0].get_Index()) as usize);
         }
 
         let offset = entries[0].get_Index() - self.ents[0].get_Index();
@@ -234,6 +234,7 @@ impl Storage for MemoryStorage {
         Ok(self.ents[0].get_Index() + self.ents.len() as u64 - 1)
     }
 
+    // not include dummy_index
     fn first_index(&self) -> Result<u64, StorageError> {
         Ok(self.ents[0].get_Index() + 1)
     }

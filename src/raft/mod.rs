@@ -9,4 +9,5 @@ pub mod unstable;
 pub mod raftpb;
 pub mod raft;
 pub mod util;
-pub mod mock;
+pub mod node;
+pub(crate) mod mock;
