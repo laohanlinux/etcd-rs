@@ -662,4 +662,64 @@ mod tests {
             assert_eq!(raft_log.unstable.offset, w_unstable);
         }
     }
+
+    #[test]
+    fn it_stable_to_with_snap() {
+        let (snap_i, snap_t) = (5, 2);
+        // (stable_i, stable_t, new_ents, w_unstable)
+        let tests = vec![
+            (snap_i + 1, snap_t, new_empty_entry_set(), snap_i + 1),
+            (snap_i, snap_t, new_empty_entry_set(), snap_i + 1),
+            (snap_i - 1, snap_t, new_empty_entry_set(), snap_i + 1),
+            (snap_i + 1, snap_t + 1, new_empty_entry_set(), snap_i + 1),
+            (snap_i, snap_t + 1, new_empty_entry_set(), snap_i + 1),
+            (snap_i - 1, snap_t + 1, new_empty_entry_set(), snap_i + 1),
+            (snap_i + 1, snap_t, new_entry_set(vec![(snap_i + 1, snap_t)]), snap_i + 2),
+            (snap_i, snap_t, new_entry_set(vec![(snap_i + 1, snap_t)]), snap_i + 1),
+            (snap_i - 1, snap_t, new_entry_set(vec![(snap_i + 1, snap_t)]), snap_i + 1),
+            (snap_i + 1, snap_t + 1, new_entry_set(vec![(snap_i + 1, snap_t)]), snap_i + 1),
+            (snap_i, snap_t + 1, new_entry_set(vec![(snap_i + 1, snap_t)]), snap_i + 1),
+            (snap_i - 1, snap_t + 1, new_entry_set(vec![(snap_i + 1, snap_t)]), snap_i + 1)];
+
+        for (stable_i, stable_t, new_ents, w_unstable) in tests {
+            let s = SafeMemStorage::new();
+            s.wl().apply_snapshot(new_snapshot(snap_i, snap_t));
+            let mut raft_log = new_log_with_storage(s);
+            raft_log.append(new_ents.as_slice());
+            raft_log.stable_to(stable_i, stable_t);
+            assert_eq!(raft_log.unstable.offset, w_unstable);
+        }
+    }
+
+
+    // #[test]
+    // fn it_compaction() {
+    //     // (last_index, compact, w_left, w_allow)
+    //     let tests = vec![
+    //         // out of upper bound
+    //         (1000, vec![1001], vec![-1], false),
+    //         (1000, vec![300, 500, 800, 900], vec![700, 500, 200, 100], true),
+    //         // out of lower bound
+    //         (1000, vec![300, 299], vec![700, -1], false),
+    //     ];
+    //     for (last_index, compact, w_left, w_allow) in tests {
+    //         let storage = SafeMemStorage::new();
+    //         for i in 1..=last_index {
+    //             storage.wl().append(new_entry_set(vec![(i, 0)]));
+    //         }
+    //         let mut raft_log = new_log_with_storage(storage);
+    //         raft_log.maybe_commit(last_index, 0);
+    //         raft_log.applied_to(raft_log.committed);
+    //
+    //         compact.iter().fold(0, |acc, compact| {
+    //             let ret = storage.wl().compact(*compact);
+    //             if ret.is_err() {
+    //                 assert!(!w_allow);
+    //                 return acc + 1;
+    //             }
+    //             assert_eq!(raft_log.all_entries().len(), w_left[acc]);
+    //             acc + 1
+    //         });
+    //     }
+    // }
 }
