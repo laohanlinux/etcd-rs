@@ -16,6 +16,7 @@ use crate::raft::util::limit_size;
 use thiserror::Error;
 use protobuf::Message;
 use bytes::{BytesMut, BufMut, Buf, Bytes};
+use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 #[derive(Error, Debug, PartialEq)]
 pub enum StorageError {
@@ -153,7 +154,7 @@ impl MemoryStorage {
             unimplemented!("compact {} is out of bound last_index({})", compact_index, self.last_index().unwrap())
         }
         let i = (compact_index - offset) as usize;
-        self.ents = self.ents.split_off(i);
+        self.ents.drain(..i);
         Ok(())
     }
 
@@ -173,7 +174,7 @@ impl MemoryStorage {
         }
         // truncate compacted entries
         if first > entries[0].get_Index() {
-            entries = entries.split_off((first - entries[0].get_Index()) as usize);
+            entries.drain(..(first - entries[0].get_Index()) as usize);
         }
 
         let offset = entries[0].get_Index() - self.ents[0].get_Index();
@@ -234,12 +235,64 @@ impl Storage for MemoryStorage {
         Ok(self.ents[0].get_Index() + self.ents.len() as u64 - 1)
     }
 
+    // not include dummy_index
     fn first_index(&self) -> Result<u64, StorageError> {
         Ok(self.ents[0].get_Index() + 1)
     }
 
     fn snapshot(&self) -> Result<Snapshot, StorageError> {
         Ok(self.snapshot.clone())
+    }
+}
+
+impl Default for MemoryStorage {
+    fn default() -> Self {
+        MemoryStorage::new()
+    }
+}
+
+#[derive(Clone, Default)]
+pub struct SafeMemStorage {
+    storage: Arc<RwLock<MemoryStorage>>,
+}
+
+impl SafeMemStorage {
+    pub fn new() -> Self {
+        SafeMemStorage::default()
+    }
+
+    pub fn rl(&self) -> RwLockReadGuard<'_, MemoryStorage> {
+        self.storage.read().unwrap()
+    }
+
+    pub fn wl(&self) -> RwLockWriteGuard<'_, MemoryStorage> {
+        self.storage.write().unwrap()
+    }
+}
+
+impl Storage for SafeMemStorage {
+    fn initial_state(&self) -> Result<(HardState, ConfState), StorageError> {
+        self.rl().initial_state()
+    }
+
+    fn entries(&self, lo: u64, hi: u64, limit: u64) -> Result<Vec<Entry>, StorageError> {
+        self.rl().entries(lo, hi, limit)
+    }
+
+    fn term(&self, i: u64) -> Result<u64, StorageError> {
+        self.rl().term(i)
+    }
+
+    fn last_index(&self) -> Result<u64, StorageError> {
+        self.rl().last_index()
+    }
+
+    fn first_index(&self) -> Result<u64, StorageError> {
+        self.rl().first_index()
+    }
+
+    fn snapshot(&self) -> Result<Snapshot, StorageError> {
+        self.rl().snapshot()
     }
 }
 
@@ -258,44 +311,19 @@ mod tests {
     #[test]
     fn storage_term() {
         let ents = vec![new_entry(3, 3), new_entry(4, 4), new_entry(5, 5)];
-        struct Arg {
-            i: u64,
-            w_err: Result<(), StorageError>,
-            w_term: u64,
-            w_panic: bool,
-        }
-        let tests = vec![Arg {
-            i: 2,
-            w_err: Err(StorageError::Compacted),
-            w_term: 0,
-            w_panic: false,
-        }, Arg {
-            i: 3,
-            w_err: Ok(()),
-            w_term: 3,
-            w_panic: false,
-        }, Arg {
-            i: 4,
-            w_err: Ok(()),
-            w_term: 4,
-            w_panic: false,
-        }, Arg {
-            i: 5,
-            w_err: Ok(()),
-            w_term: 5,
-            w_panic: false,
-        }, Arg {
-            i: 6,
-            w_err: Err(StorageError::Unavailable),
-            w_term: 0,
-            w_panic: false,
-        }];
-
-        for (i, tt) in tests.iter().enumerate() {
+        //(i, w_err, w_term, w_panic)
+        let tests = vec![
+            (2, Err(StorageError::Compacted), 0, false),
+            (3, Ok(()), 3, false),
+            (4, Ok(()), 4, false),
+            (5, Ok(()), 5, false),
+            (6, Err(StorageError::Unavailable), 0, false),
+        ];
+        for (i, w_err, w_term, w_panic) in tests {
             let mut s = MemoryStorage::new_with_entries(ents.clone());
-            match s.term(tt.i) {
+            match s.term(i) {
                 Ok(term) => {}
-                Err(ref e)  if e == tt.w_err.as_ref().unwrap_err() => {}
+                Err(e)  if e == w_err.unwrap_err() => {}
                 Err(_) => unimplemented!()
             }
         }

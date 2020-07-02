@@ -1,4 +1,5 @@
 #![feature(is_sorted)]
+#![feature(const_fn)]
 
 #[macro_use]
 extern crate log;
