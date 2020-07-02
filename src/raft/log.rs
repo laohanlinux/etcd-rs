@@ -59,9 +59,6 @@ pub struct RaftLog<T: Storage> {
     // Everytime handling `Ready`, the unstable logs will be included.
     stabled: u64,
 
-    // all entries that have not yet compact.
-    entries: Vec<Entry>,
-
     // max_next_ents_size is the maximum number aggregate byte size of the messages
     // returned from calls to nextEnts
     max_next_ents_size: u64,
@@ -81,7 +78,6 @@ impl<T: Storage> RaftLog<T> {
             committed: 0,
             applied: 0,
             stabled: 0,
-            entries: vec![],
             max_next_ents_size,
         };
         let first_index = log.storage.first_index().unwrap();
@@ -90,15 +86,17 @@ impl<T: Storage> RaftLog<T> {
         log.unstable.offset = last_index + 1;
         log.committed = first_index - 1;
         log.applied = first_index - 1;
+        info!("init raft_log=> {}", log.to_string());
         log
     }
 
     // maybe_append returns `None` if the entries cannot be appended. Otherwise,
     // it returns `Some(last index of new entries)`
+    // NOTICE: ents[0].index = index + 1, ents[0].term <= log_term if ents not empty, the message come from leader node
     pub(crate) fn maybe_append(&mut self, index: u64, log_term: u64, committed: u64, ents: &[Entry])
                                -> Option<u64> {
         if self.match_term(index, log_term) {
-            let lastnewi = index + ents.len() as u64;
+            let last_new_i = index + ents.len() as u64;
             match self.find_conflict(ents) {
                 0 => {}
                 ci if ci <= self.committed => {
@@ -109,8 +107,9 @@ impl<T: Storage> RaftLog<T> {
                     self.append(&ents[(ci - offset) as usize..]);
                 }
             }
-            self.commit_to(committed.min(lastnewi));
-            Some(lastnewi)
+            //? Why not panic if committed > last_new_i
+            self.commit_to(committed.min(last_new_i));
+            Some(last_new_i)
         } else {
             None
         }
@@ -140,6 +139,7 @@ impl<T: Storage> RaftLog<T> {
     pub(crate) fn find_conflict(&self, ents: &[Entry]) -> u64 {
         for ent in ents {
             if !self.match_term(ent.get_Index(), ent.get_Term()) {
+                // info!("not match at index {}", ent.get_Index());
                 if ent.get_Index() <= self.last_index() {
                     let exist_term = self.term(ent.get_Index()).map_or(0, |t| t);
                     info!("found conflict at index {} [existing term: {}, conflicting term: {}]", ent.get_Index(), exist_term, ent.get_Term());
@@ -203,7 +203,6 @@ impl<T: Storage> RaftLog<T> {
             self.committed = to_commit;
         }
     }
-
 
     pub(crate) fn applied_to(&mut self, i: u64) {
         if i == 0 { return; }
@@ -341,7 +340,7 @@ impl<T: Storage> RaftLog<T> {
     }
 
     fn to_string(&self) -> String {
-        format!("committed={}, applied={}, unstable.offset={}, len(unstable.entries)={}", self.committed, self.applied, self.unstable.offset, self.unstable.entries.len())
+        format!("last_index={}, term={}, committed={}, applied={}, unstable.offset={}, len(unstable.entries)={}", self.last_index(), self.last_term(), self.committed, self.applied, self.unstable.offset, self.unstable.entries.len())
     }
 }
 
@@ -349,10 +348,11 @@ impl<T: Storage> RaftLog<T> {
 #[cfg(test)]
 mod tests {
     use crate::raft::mock::{new_entry, new_entry_set, new_log, new_log_with_storage, new_empty_entry_set, new_snapshot};
-    use crate::raft::storage::MemoryStorage;
+    use crate::raft::storage::{MemoryStorage, SafeMemStorage, Storage};
     use crate::raft::raft::NO_LIMIT;
 
     use std::panic::{self, AssertUnwindSafe};
+    use crate::raft::raftpb::raft::Entry;
 
     fn init() {
         #[warn(unused_must_use)]
@@ -454,6 +454,7 @@ mod tests {
     //  return false
     #[test]
     fn it_log_maybe_append() {
+        init();
         let previous_ents = new_entry_set(vec![(1, 1), (2, 2), (3, 3)]);
         let last_index = 3;
         let last_term = 3;
@@ -478,7 +479,7 @@ mod tests {
             // match with the entry in the middle
             (last_term - 1, last_index - 1, last_index, new_entry_set(vec![(last_index, 4)]), last_index, true, last_index, false),
             (last_term - 2, last_index - 2, last_index, new_entry_set(vec![(last_index - 1, 4)]), last_index - 1, true, last_index - 1, false),
-            (last_term - 3, last_index - 3, last_index, new_entry_set(vec![(last_term - 2, 4)]), last_index - 2, true, last_index - 2, true), // conflict with existing committed entry
+            (last_term - 3, last_index - 3, last_index, new_entry_set(vec![(last_index - 2, 4)]), last_index - 2, true, last_index - 2, true), // conflict with existing committed entry
             (last_term - 2, last_index - 2, last_index, new_entry_set(vec![(last_index - 1, 4), (last_index, 4)]), last_index, true, last_index, false),
         ];
 
@@ -508,109 +509,157 @@ mod tests {
 
     // TestCompactionSideEffects ensure that all the log related functionality works correctly after
     // a compaction
-    // #[test]
-    // fn it_compaction_side_effects() {
-    //     let mut i = 0;
-    //     // Populate the log with 1000 entries; 750 in stable storage and 250 in unstable.
-    //     let last_index = 1000;
-    //     let unstable_index = 750;
-    //     let last_term = last_index;
-    //     let mut storage = MemoryStorage::new();
-    //     for ux in 1..=unstable_index {
-    //         storage.append(new_entry_set(vec![(i, i)]));
-    //     }
-    //     let mut raft_log = new_log_with_storage(storage);
-    //     for i in unstable_index..last_index {
-    //         raft_log.append(new_entry_set(vec![(i + 1, i + 1)]).as_slice());
-    //     }
-    //     assert!(raft_log.maybe_commit(last_index, last_term));
-    //     raft_log.applied_to(raft_log.committed);
-    //
-    //     let offset = 500;
-    //     storage.compact(offset);
-    //     assert_eq!(raft_log.last_index(), last_index);
-    //
-    //     for i in offset..=raft_log.last_index() {
-    //         // TODO
-    //     }
-    //
-    //     for j in offset..=raft_log.last_index() {
-    //         assert!(raft_log.match_term(j, j));
-    //     }
-    //
-    //     let unstable_ents = raft_log.unstable_entries();
-    //     assert_eq!(250, unstable_ents.len());
-    //     assert_eq!(751, unstable_ents[0].get_Index());
-    //
-    //     let prev = raft_log.last_index();
-    //     raft_log.append(new_entry_set(vec![(raft_log.last_index() + 1, raft_log.last_index() + 1)]).as_slice());
-    //     assert_eq!(raft_log.last_index(), prev + 1);
-    //
-    //     let ents = raft_log.entries(raft_log.last_index(), NO_LIMIT);
-    //     assert!(ents.is_ok());
-    //     assert!(ents.as_ref().unwrap().len(), 1);
-    // }
-    //
-    // #[test]
-    // fn it_has_next_ents() {
-    //     let snap = new_snapshot(3, 1);
-    //     let ents = new_entry_set(vec![(4, 1), (5, 1), (6, 1)]);
-    //     // (applied, has_next)
-    //     let tests = vec![
-    //         (0, true),
-    //         (3, true),
-    //         (4, true),
-    //         (5, false),
-    //     ];
-    //
-    //     for (applied, has_next) in tests {
-    //         let mut storage = MemoryStorage::new();
-    //         storage.apply_snapshot(snap);
-    //         let mut raft_log = new_log_with_storage(storage);
-    //         raft_log.append(ents.as_slice());
-    //         raft_log.maybe_commit(5, 1);
-    //         raft_log.applied_to(applied);
-    //
-    //         let actual_has_next = raft_log.has_next_entries();
-    //         assert_eq!(has_next, actual_has_next);
-    //     }
-    // }
-    //
-    // // unstable_ents ensure unstable_ents returns the unstable part of the
-    // // entries correctly.
-    // #[test]
-    // fn it_unstable_ents() {
-    //     let previous_ents = new_entry_set(vec![(1, 1), (2, 2)]);
-    //     // (unstable, w_ents)
-    //     let tests = vec![
-    //         (3, vec![]),
-    //         (1, previous_ents),
-    //     ];
-    //
-    //     for (unstable, w_ents) in tests {
-    //         // append stable entries to storage
-    //         let mut storage = MemoryStorage::new();
-    //         storage.append(previous_ents[..(unstable - 1)].clone());
-    //
-    //         // append unstable entries to raft_log
-    //         let mut raft_log = new_log_with_storage(storage);
-    //         raft_log.append(previous_ents[(unstable - 1)..].clone());
-    //
-    //         let ents = raft_log.unstable_entries();
-    //         if !ents.is_empty() {
-    //             raft_log.stable_to(ents[l - 1].get_Index(), ents[l - 1].get_term());
-    //         }
-    //         assert_eq!(ents, w_ents);
-    //
-    //         let w = previous_ents[previous_ents.len() - 1].get_Index() - 1;
-    //         assert_eq!(raft_log.unstable.offset, w);
-    //     }
-    // }
-    //
-    // #[test]
-    // fn it_commit_to() {
-    //     let previous_ents = new_entry_set(vec![(1, 1), (2, 2), (3, 3)]);
-    //     let commit = 2;
-    //     // (commit, w_commit, w_panic)
-    // }
+    #[test]
+    fn it_compaction_side_effects() {
+        init();
+        let mut i = 0;
+        // Populate the log with 1000 entries; 750 in stable storage and 250 in unstable.
+        let last_index = 1000;
+        let unstable_index = 750;
+        let last_term = last_index;
+        let mut storage = SafeMemStorage::default();
+        for ux in 1..=unstable_index {
+            assert!(storage.wl().append(new_entry_set(vec![(ux, ux)])).is_ok());
+            assert_eq!(storage.rl().first_index().unwrap(), 1);
+            assert_eq!(storage.rl().last_index().unwrap(), ux);
+        }
+        // assert_eq!(storage.rl().entries(0, unstable_index+1, NO_LIMIT).as_ref().unwrap().len(), unstable_index as usize);
+        let mut raft_log = new_log_with_storage(storage.clone());
+        println!("last_index {}, last_term {}, committed {}", raft_log.last_index(), raft_log.last_term(), raft_log.committed);
+        for i in unstable_index..last_index {
+            let last_index = raft_log.append(new_entry_set(vec![(i + 1, i + 1)]).as_slice());
+            assert_eq!(last_index, i + 1);
+        }
+        assert!(raft_log.maybe_commit(last_index, last_term));
+        raft_log.applied_to(raft_log.committed);
+
+        let offset = 500;
+        storage.wl().compact(offset);
+        assert_eq!(raft_log.last_index(), last_index);
+
+        for i in offset..=raft_log.last_index() {
+            let term = raft_log.term(i);
+            assert!(term.is_ok());
+            assert_eq!(i, term.unwrap());
+        }
+
+        for j in offset..=raft_log.last_index() {
+            assert!(raft_log.match_term(j, j));
+        }
+
+        let unstable_ents = raft_log.unstable_entries();
+        assert_eq!(250, unstable_ents.len());
+        assert_eq!(751, unstable_ents[0].get_Index());
+
+        let prev = raft_log.last_index();
+        raft_log.append(new_entry_set(vec![(raft_log.last_index() + 1, raft_log.last_index() + 1)]).as_slice());
+        assert_eq!(prev + 1, raft_log.last_index());
+
+        let ents = raft_log.entries(raft_log.last_index(), NO_LIMIT);
+        assert!(ents.is_ok());
+        assert_eq!(ents.as_ref().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn it_has_next_ents() {
+        init();
+        let snap = new_snapshot(3, 1);
+        let ents = new_entry_set(vec![(4, 1), (5, 1), (6, 1)]);
+        // (applied, has_next)
+        let tests = vec![
+            (0, true),
+            (3, true),
+            (4, true),
+            (5, false),
+        ];
+
+        for (applied, has_next) in tests {
+            let mut storage = SafeMemStorage::new();
+            storage.wl().apply_snapshot(snap.clone());
+            let mut raft_log = new_log_with_storage(storage);
+            raft_log.append(ents.as_slice());
+            assert!(raft_log.maybe_commit(5, 1));
+            raft_log.applied_to(applied);
+            info!("first_index {}, committed {}, applied {}", raft_log.first_index(), raft_log.committed, raft_log.applied);
+            let actual_has_next = raft_log.has_next_entries();
+            assert_eq!(has_next, actual_has_next);
+        }
+    }
+
+    // unstable_ents ensure unstable_ents returns the unstable part of the
+    // entries correctly.
+    #[test]
+    fn it_unstable_ents() {
+        init();
+        let previous_ents = new_entry_set(vec![(1, 1), (2, 2)]);
+        // (unstable, w_ents)
+        let tests = vec![
+            (3, vec![]),
+            (1, previous_ents.clone()),
+        ];
+
+        for (unstable, w_ents) in tests {
+            // append stable entries to storage
+            let storage = SafeMemStorage::new();
+            storage.wl().append(previous_ents[..(unstable - 1)].iter().map(|entry| entry.clone()).collect());
+
+            // append unstable entries to raft_log
+            let mut raft_log = new_log_with_storage(storage);
+            raft_log.append(&previous_ents[(unstable - 1)..]);
+
+            let ents: Vec<Entry> = raft_log.unstable_entries().iter().map(|entry| entry.clone()).collect();
+            if !ents.is_empty() {
+                let spot = ents.len() - 1;
+                raft_log.stable_to(ents[spot].get_Index(), ents[spot].get_Term());
+            }
+            assert_eq!(ents.clone(), w_ents.as_slice());
+
+            let w = previous_ents[previous_ents.len() - 1].get_Index() + 1;
+            assert_eq!(raft_log.unstable.offset, w);
+        }
+    }
+
+    #[test]
+    fn it_commit_to() {
+        init();
+        let previous_ents = new_entry_set(vec![(1, 1), (2, 2), (3, 3)]);
+        let commit = 2;
+        // (commit, w_commit, w_panic)
+        let tests = vec![
+            (3, 3, false),
+            (1, 2, false), // never decrease
+            (4, 0, true), // commit out of range -> panic
+        ];
+
+        for (_commit, w_commit, w_panic) in tests {
+            let mut raft_log = new_log();
+            raft_log.append(previous_ents.as_slice());
+            raft_log.committed = commit;
+            let catch = panic::catch_unwind(AssertUnwindSafe(|| {
+                raft_log.commit_to(_commit);
+            }));
+            if catch.is_err() {
+                assert!(w_panic);
+                continue;
+            }
+            assert_eq!(raft_log.committed, w_commit);
+        }
+    }
+
+    #[test]
+    fn it_stable_to() {
+        // (stable_i, stable_t, w_unstable)
+        let tests = vec![
+            (1, 1, 2),
+            (2, 2, 3),
+            (2, 1, 1), // bad term
+            (3, 1, 1), // bad index
+        ];
+        for (stable_i, stable_t, w_unstable) in tests {
+            let mut raft_log = new_log();
+            raft_log.append(new_entry_set(vec![(1, 1), (2, 2)]).as_slice());
+            raft_log.stable_to(stable_i, stable_t);
+            assert_eq!(raft_log.unstable.offset, w_unstable);
+        }
+    }
 }

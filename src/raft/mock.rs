@@ -1,5 +1,5 @@
 use crate::raft::raftpb::raft::{Entry, Snapshot};
-use crate::raft::storage::{MemoryStorage, Storage};
+use crate::raft::storage::{MemoryStorage, Storage, SafeMemStorage};
 use crate::raft::log::RaftLog;
 
 pub fn new_entry(index: u64, term: u64) -> Entry {
@@ -24,12 +24,12 @@ pub fn new_snapshot(index: u64, term: u64) -> Snapshot {
     snapshot
 }
 
-pub fn new_memory() -> MemoryStorage {
-    let storage = MemoryStorage::new();
+pub fn new_memory() -> SafeMemStorage {
+    let storage = SafeMemStorage::new();
     storage
 }
 
-pub fn new_log() -> RaftLog<MemoryStorage> {
+pub fn new_log() -> RaftLog<SafeMemStorage> {
     let mut storage = new_memory();
     let mut log = RaftLog::new(storage);
     log

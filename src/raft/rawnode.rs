@@ -24,6 +24,7 @@ use thiserror::Error;
 use anyhow::{anyhow, Result};
 use std::collections::HashMap;
 use std::error::Error as StdError;
+use std::marker::PhantomData;
 
 #[derive(Error, Debug, PartialEq, Eq)]
 pub enum RawRaftError {
@@ -55,6 +56,7 @@ pub struct SoftState {
 // more fully there.
 pub struct RawNode<S: Storage> {
     raft: Raft<S>,
+    marker: PhantomData<S>,
     // prev_soft_st: SoftState,
     // prev_hard_st: HardState,
 }
