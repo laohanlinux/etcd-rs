@@ -197,7 +197,7 @@ mod tests {
             (vec![], 0, None, false, 0),
         ];
         for (i, (entries, offset, snapshot, w_ok, w_index)) in tests.iter().enumerate() {
-            let mut u = Unstable {
+            let u = Unstable {
                 snapshot: snapshot.clone(),
                 entries: entries.clone(),
                 offset: *offset,
@@ -256,7 +256,7 @@ mod tests {
             (vec![], 0, None, 5, false, 0),
         ];
         for (i, (entries, offset, snapshot, index, w_ok, w_term)) in tests.iter().enumerate() {
-            let mut u = Unstable {
+            let u = Unstable {
                 snapshot: snapshot.clone(),
                 entries: entries.clone(),
                 offset: *offset,
@@ -275,7 +275,7 @@ mod tests {
             entries: vec![new_entry(5, 1)],
             offset: 5,
         };
-        let mut s = new_snapshot(6, 2);
+        let s = new_snapshot(6, 2);
         u.restore(s.clone());
         assert_eq!(u.offset, s.get_metadata().get_index() + 1);
         assert!(u.entries.is_empty());
@@ -340,7 +340,7 @@ mod tests {
             ), // stable to old entry
         ];
         for (i, (entries, offset, snapshot, index, term, w_offset, w_len)) in
-            tests.iter().enumerate()
+        tests.iter().enumerate()
         {
             let mut u = Unstable {
                 snapshot: snapshot.clone(),

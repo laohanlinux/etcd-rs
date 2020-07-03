@@ -30,9 +30,7 @@ pub fn new_memory() -> SafeMemStorage {
 }
 
 pub fn new_log() -> RaftLog<SafeMemStorage> {
-    let mut storage = new_memory();
-    let mut log = RaftLog::new(storage);
-    log
+    RaftLog::new(new_memory())
 }
 
 pub fn new_log_with_storage<T: Storage>(storage: T) -> RaftLog<T> {
