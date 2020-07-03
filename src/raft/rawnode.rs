@@ -54,7 +54,7 @@ pub struct SoftState {
 // RawNode is a thread-unsafe Node.
 // The methods of this struct corresponds to the methods of Node and are described
 // more fully there.
-pub struct RawNode<S: Storage> {
+pub struct RawNode<S: Storage + Clone> {
     raft: Raft<S>,
     marker: PhantomData<S>,
     // prev_soft_st: SoftState,
@@ -68,7 +68,7 @@ pub struct RawNode<S: Storage> {
 // recommended that instead of calling Bootstrap. application bootstrap their
 // state manually by setting up a Storage that has a first index > 1 and which
 // stores the described ConfState as its InitialState.
-impl<S: Storage> RawNode<S> {
+impl<S: Storage + Clone> RawNode<S> {
     // Tick advances the interval logical clock by a single tick.
     pub fn tick(&mut self) {
         self.raft.tick();

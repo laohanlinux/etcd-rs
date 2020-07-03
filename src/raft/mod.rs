@@ -10,4 +10,5 @@ pub mod raftpb;
 pub mod raft;
 pub mod util;
 pub mod node;
+pub mod read_only;
 pub(crate) mod mock;
