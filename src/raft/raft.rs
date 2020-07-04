@@ -253,7 +253,7 @@ impl<S: Storage + Clone> Raft<S> {
     // TODO:
     pub fn new(mut config: Config<S>) {
         assert!(config.validate().is_ok());
-        let mut raft_log = RaftLog::new_log_with_size(config.storage, config.max_committed_size_per_ready);
+        let mut raft_log = RaftLog::new_log_with_size(config.storage.clone(), config.max_committed_size_per_ready);
         let state_ret = config.storage.initial_state();
         assert!(state_ret.is_ok()); // TODO(bdarnell)
         let (hs, cs) = state_ret.unwrap();
@@ -262,9 +262,7 @@ impl<S: Storage + Clone> Raft<S> {
             // tests; the argument should be removed and these tests should be
             // updated to specify their nodes through a snapshot.
             panic!("cannot specify both new_raft(pees, learners) and ConfigState.(Voters, Learners)");
-
         }
-
     }
     // send_append sends an append RPC with new entries (if any) and the
     // current commit index to the given peer. Returns true if a message was sent.
