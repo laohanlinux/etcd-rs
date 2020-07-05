@@ -215,7 +215,8 @@ impl Display for Progress {
 }
 
 // ProgressMap is a map of *Progress
-pub struct ProgressMap(HashMap<u64, Progress>);
+#[derive(Default)]
+pub struct ProgressMap(pub HashMap<u64, Progress>);
 
 impl Display for ProgressMap {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {

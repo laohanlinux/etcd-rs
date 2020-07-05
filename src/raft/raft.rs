@@ -256,13 +256,47 @@ impl<S: Storage + Clone> Raft<S> {
         let mut raft_log = RaftLog::new_log_with_size(config.storage.clone(), config.max_committed_size_per_ready);
         let state_ret = config.storage.initial_state();
         assert!(state_ret.is_ok()); // TODO(bdarnell)
-        let (hs, cs) = state_ret.unwrap();
+        let (mut hs, mut cs) = state_ret.unwrap();
         if !config.peers.is_empty() || !config.learners.is_empty() {
             // TODO(bdarnell): the peers argument is always nil except in
             // tests; the argument should be removed and these tests should be
             // updated to specify their nodes through a snapshot.
             panic!("cannot specify both new_raft(pees, learners) and ConfigState.(Voters, Learners)");
+            cs.set_voters(config.peers.clone());
+            cs.set_learners(config.learners.clone());
         }
+
+        let mut raft = Raft{
+            id: config.id,
+            term: 0,
+            vote: 0,
+            read_state: vec![],
+            raft_log,
+            max_msg_size: config.max_size_per_msg,
+            max_uncommitted_size: config.max_uncommitted_entries_size,
+            prs: Default::default(),
+            state: State::Follower,
+            is_learner: false,
+            msgs: vec![],
+            lead: NONE,
+            lead_transferee: 0,
+            pending_config_index: 0,
+            uncommitted_size: 0,
+            read_only: ReadOnly {
+                option: ReadOnlyOption::ReadOnlySafe,
+                pending_read_index: Default::default(),
+                read_index_queue: vec![]
+            },
+            election_elapsed: 0,
+            heartbeat_elapsed: 0,
+            check_quorum: false,
+            pre_vote: false,
+            heartbeat_timeout: 0,
+            election_timeout: 0,
+            randomized_election_timeout: 0,
+            disable_proposal_forwarding: false,
+            votes: Default::default()
+        };
     }
     // send_append sends an append RPC with new entries (if any) and the
     // current commit index to the given peer. Returns true if a message was sent.

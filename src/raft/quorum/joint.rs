@@ -4,11 +4,18 @@ use std::collections::{HashMap, HashSet};
 use std::process::id;
 use crate::raft::quorum::quorum::AckedIndexer;
 
-pub struct JointConfig([MajorityConfig; 2]);
+#[derive(Clone)]
+pub struct JointConfig(pub [MajorityConfig; 2]);
 
 impl JointConfig {
     pub fn new() -> Self {
         JointConfig([MajorityConfig::new(), MajorityConfig::new()])
+    }
+}
+
+impl Default for JointConfig {
+    fn default() -> Self {
+        JointConfig::new()
     }
 }
 
