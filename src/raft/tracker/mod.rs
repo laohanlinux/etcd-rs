@@ -207,7 +207,7 @@ impl ProgressTracker {
             }
             match self.votes.get(id) {
                 Some(v) => {
-                    if v {
+                    if *v {
                         granted += 1;
                     } else {
                         rejected += 1;

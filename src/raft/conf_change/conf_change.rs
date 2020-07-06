@@ -31,7 +31,7 @@ pub struct Changer {
 }
 
 impl Changer {
-    pub fn enter_joint(&mut self, auto_leave: bool, ccs: Vec<ConfChangeSingle>) -> Result((Config, ProgressMap), String) {}
+    // pub fn enter_joint(&mut self, auto_leave: bool, ccs: Vec<ConfChangeSingle>) -> Result((Config, ProgressMap), String) {}
 }
 
 // pub(crate) fn symiff(l: HashMap<u64, ()>) -> u64 {
@@ -51,26 +51,27 @@ pub(crate) fn outgoing(voters: &JointConfig) -> &MajorityConfig {
     &voters.0[1]
 }
 
-pub(crate) fn outgoing_ptr(ccs: Vec<ConfChangeSingle>) -> String {
-    let mut buf = BytesMut::new();
-    ccs.iter().map(|cs| {
-        if !buf.is_empty() {
-            buf.write_char(' ');
-        }
-        buf.write_str(&format!("{}({})", cs.get_field_type(), cs.get_node_id()));
-    });
-    String::from_utf8(buf.to_vec()).unwrap()
+pub(crate) fn outgoing_ptr(voters: &JointConfig) -> &MajorityConfig {
+    // let mut buf = BytesMut::new();
+    // ccs.iter().map(|cs| {
+    //     if !buf.is_empty() {
+    //         buf.write_char(' ');
+    //     }
+    //     buf.write_str(&format!("{:?}({})", cs.get_field_type(), cs.get_node_id()));
+    // });
+    // String::from_utf8(buf.to_vec()).unwrap()
+    &voters.0[1]
 }
 
 // prints the type and node_id of the configuration changes as a
 // space-delimited string.
-pub fn describe(ccs: Vec<ConfChangeSingle>) -> string {
+pub fn describe(ccs: Vec<ConfChangeSingle>) -> String {
     let mut buf = BytesMut::new();
     for cc in ccs {
         if !buf.is_empty() {
             buf.write_char(' ');
         }
-        buf.write_str(&format!("{}({})", cc.get_field_type(), cc.get_node_id()));
+        buf.write_str(&format!("{:?}({})", cc.get_field_type(), cc.get_node_id()));
     }
     String::from_utf8(buf.to_vec()).unwrap()
 }

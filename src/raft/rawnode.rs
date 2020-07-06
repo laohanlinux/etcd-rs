@@ -118,7 +118,7 @@ impl<S: Storage + Clone> RawNode<S> {
         if is_local_message(m.get_field_type()) {
             return Err(RawRaftError::StepLocalMsg);
         }
-        if self.raft.prs.contains_key(&m.get_from()) || !is_response_message(m.get_field_type()) {
+        if self.raft.prs.progress.0.contains_key(&m.get_from()) || !is_response_message(m.get_field_type()) {
             return self.raft.step(m).map_err(|err| RawRaftError::StepUnknown(err));
         }
         Err(RawRaftError::StepPeerNotFound)
