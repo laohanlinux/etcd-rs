@@ -149,13 +149,13 @@ impl<S: Storage + Clone> RawNode<S> {
     // TODO
     // GetProgress return the the Progress of this node and its peers, if this
     // node is leader.
-    pub fn get_progress(&self) -> HashMap<u64, Progress> {
-        let mut prs = HashMap::new();
-        if self.raft.state == State::Leader {
-            prs = self.raft.prs.clone();
-        }
-        prs
-    }
+    // pub fn get_progress(&self) -> HashMap<u64, Progress> {
+    //     let mut prs = HashMap::new();
+    //     if self.raft.state == State::Leader {
+    //         prs = self.raft.prs.clone();
+    //     }
+    //     prs
+    // }
 
     // TODO
     // TransferLeader tris=es to transfer leadership to the given transferee.

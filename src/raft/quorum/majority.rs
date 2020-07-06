@@ -1,8 +1,8 @@
-use std::collections::HashSet;
+use std::collections::{HashSet, HashMap};
 use std::fmt::{self, Formatter, Display, Write};
 use std::process::id;
 use std::cmp::Ordering;
-use crate::raft::quorum::quorum::{AckedIndexer, Index};
+use crate::raft::quorum::quorum::{AckedIndexer, Index, VoteResult};
 
 #[derive(Clone)]
 pub struct MajorityConfig {
@@ -13,6 +13,10 @@ impl MajorityConfig {
     // fn vote_result(votes: &HashMap<i64, bool>) -> Option<>
     pub fn new() -> Self {
         MajorityConfig { votes: HashSet::new() }
+    }
+
+    pub fn len(&self) -> usize {
+        self.votes.len()
     }
 
     pub fn describe<T: AckedIndexer>(&self, l: T) -> String {
@@ -67,15 +71,53 @@ impl MajorityConfig {
 
     // commit_index computes the committed index from those supplied via the
     // provide acked_index (for the active config).
-    pub fn committed_index<T: AckedIndexer>(&mut self, l: T) -> Index {
+    pub fn committed_index<T: AckedIndexer>(&self, l: T) -> Index {
         if self.votes.is_empty() {
             // This plays well with joint quorum which, when one of half is the zero
             // MajorityConfig, should behave like the other half.
-            return u64::max_value()
+            return u64::max_value();
         }
         // Use a on-stack slice to collect the committed indexes when n <= 7
         //
         0
+    }
+
+    // VoteResult takes a mapping of voters to yes/no (true/false) votes and returns
+    // a result indicating whether the vote is pending (i.e. neither a quorum of
+    // yes/no has been reached), won (a quorum of yes has been reached), or lost (a
+    // quorum of no has been reached).
+    pub fn vote_result(&self, votes: &HashMap<u64, bool>) -> VoteResult {
+        if votes.is_empty() {
+            // By convention, the elections on an empty config win. This comes in
+            // handy with joint quorums because it'll make a half-populated joint
+            // quorum behave like a majority quorum
+            return VoteResult::VoteWon;
+        }
+        let mut ny: Vec<usize> = Vec::with_capacity(2); // vote counts for no and yes, responsibility
+        let mut missing = 0;
+        for id in &self.votes {
+            match votes.get(id) {
+                Some(v) => {
+                    if *v {
+                        ny[1] += 1;
+                    } else {
+                        ny[0] += 1;
+                    }
+                }
+                None => {
+                    missing += 1;
+                }
+            }
+        }
+
+        let q = self.votes.len() / 2 + 1;
+        if ny[1] >= q {
+            return VoteResult::VoteWon;
+        }
+        if ny[1] + missing >= q {
+            return VoteResult::VotePending;
+        }
+        VoteResult::VoteLost
     }
 
     pub fn as_slice(&self) -> Vec<u64> {

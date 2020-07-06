@@ -11,8 +11,9 @@ use std::collections::HashMap;
 // NB(tg): Progress is basically a state machine whose transactions are mostly
 // strewn around `*raft.raft`. Additionally, some fields are only used when in a 
 // certain State. All of this isn't ideal
+#[derive(Clone)]
 pub struct Progress {
-    _match: u64,
+    pub(crate) _match: u64,
     next: u64,
 
     // State defines how the leader should interact with the follower.
@@ -40,7 +41,7 @@ pub struct Progress {
     // recent_active can be reset to false after an election timeout.
     //
     // TODO(tbg): the leader should always have this set to true.
-    recent_active: bool,
+    pub(crate) recent_active: bool,
 
     // ProbeSent is used while this follower is in StateProbe. When ProbeSent is
     // true, raft should pause sending replication message to this peer until
@@ -48,7 +49,7 @@ pub struct Progress {
     probe_sent: bool,
 
     // IsLeader is true if this progress is tracked for a leader.
-    is_leader: bool,
+    pub(crate) is_leader: bool,
 
     // Inflights is a sliding window for the inflight messages.
     // Each inflight message contains one or mre log entries.

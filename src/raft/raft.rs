@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use crate::raft::raftpb::raft::Message;
 use crate::raft::raftpb::raft::MessageType::{MsgVoteResp, MsgPreVote};
 use crate::raft::read_only::{ReadState, ReadOnly};
+use crate::raft::tracker::ProgressTracker;
 
 // NONE is a placeholder node ID used when there is no leader.
 pub const NONE: u64 = 0;
@@ -194,7 +195,7 @@ pub struct Raft<S: Storage + Clone> {
     max_uncommitted_size: u64,
     // TODO(tbg): rename to trk.
     // log replication progress of each peers.
-    pub prs: HashMap<u64, Progress>,
+    pub prs: ProgressTracker,
     // this peer's role
     pub state: State,
     // is_leader is true if the local raft node is a leaner
@@ -274,7 +275,7 @@ impl<S: Storage + Clone> Raft<S> {
             raft_log,
             max_msg_size: config.max_size_per_msg,
             max_uncommitted_size: config.max_uncommitted_entries_size,
-            prs: Default::default(),
+            prs: ProgressTracker::new(config.max_inflight_msgs),
             state: State::Follower,
             is_learner: false,
             msgs: vec![],
@@ -297,6 +298,7 @@ impl<S: Storage + Clone> Raft<S> {
             disable_proposal_forwarding: false,
             votes: Default::default()
         };
+
     }
     // send_append sends an append RPC with new entries (if any) and the
     // current commit index to the given peer. Returns true if a message was sent.
