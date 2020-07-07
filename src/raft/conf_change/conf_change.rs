@@ -34,9 +34,9 @@ impl Changer {
     // pub fn enter_joint(&mut self, auto_leave: bool, ccs: Vec<ConfChangeSingle>) -> Result((Config, ProgressMap), String) {}
 }
 
-pub(crate) fn check_and_return(cfg: Config, prs: ProgressMap) -> Result((Config, ProgressMap), String) {
-
-}
+// pub(crate) fn check_and_return(cfg: Config, prs: ProgressMap) -> Result((Config, ProgressMap), String) {
+//
+// }
 
 // pub(crate) fn symiff(l: HashMap<u64, ()>) -> u64 {
 //     let mut n = 0;

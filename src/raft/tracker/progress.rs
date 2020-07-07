@@ -1,6 +1,6 @@
 use crate::raft::tracker::state::StateType;
 use crate::raft::tracker::inflights::Inflights;
-use crate::raft::tracker::state::StateType::{StateProbe, StateReplicate};
+use crate::raft::tracker::state::StateType::{Probe, Replicate, Snapshot};
 use std::fmt::{self, Display, Formatter, Error};
 use std::collections::HashMap;
 
@@ -89,26 +89,26 @@ impl Progress {
         // If the original state is StateSnapshot, Progress knows that
         // the pending snapshot has been sent to this peer Successfully, then
         // probes from pendingSnapshot + 1.
-        if self.state == StateType::StateSnapshot {
+        if self.state == StateType::Snapshot {
             let pending_snapshot = self.pending_snapshot;
-            self.reset_state(StateType::StateProbe);
+            self.reset_state(StateType::Probe);
             self.next = (self._match + 1).max(pending_snapshot + 1);
         } else {
-            self.reset_state(StateType::StateProbe);
+            self.reset_state(StateType::Probe);
             self.next = self._match + 1;
         }
     }
 
     // Become Replicate transaction into StateReplicate, resetting Next to _match + 1
     pub fn become_replicate(&mut self) {
-        self.reset_state(StateType::StateSnapshot);
+        self.reset_state(StateType::Replicate);
         self.next = self._match + 1;
     }
 
     // BecomeSnapshot moves that Progress to StateSnapshot with the specified pending
     // snapshot
     pub fn become_snapshot(&mut self, snapshot: u64) {
-        self.reset_state(StateType::StateSnapshot);
+        self.reset_state(StateType::Snapshot);
         self.pending_snapshot = snapshot;
     }
 
@@ -145,9 +145,8 @@ impl Progress {
     //
     // If the rejection is genuine, Next is lowered sensibly, and the Progress is
     // cleared for sending log entries
-
     pub fn maybe_decr_to(&mut self, rejected: u64, last: u64) -> bool {
-        if self.state == StateReplicate {
+        if self.state == Replicate {
             // The rejected must be stale if the progress has matched and "rejected"
             // is smaller than "match".
             if rejected <= self._match {
@@ -182,9 +181,9 @@ impl Progress {
     // log entries again.
     pub fn is_paused(&self) -> bool {
         match self.state {
-            StateType::StateProbe => self.probe_sent,
-            StateType::StateReplicate => self.inflights.full(),
-            StateType::StateSnapshot => true
+            StateType::Probe => self.probe_sent,
+            StateType::Replicate => self.inflights.full(),
+            StateType::Snapshot => true
         }
     }
 }
@@ -238,6 +237,7 @@ mod tests {
     use crate::raft::tracker::inflights::Inflights;
     use crate::raft::tracker::progress::Progress;
     use crate::raft::tracker::state::StateType;
+    use crate::raft::tracker::state::StateType::{Probe, Replicate, Snapshot};
 
     #[test]
     fn it_process_string() {
@@ -246,55 +246,44 @@ mod tests {
         let mut pr = Progress {
             _match: 1,
             next: 2,
-            state: StateType::StateSnapshot,
+            state: StateType::Snapshot,
             pending_snapshot: 123,
             recent_active: false,
             probe_sent: true,
             is_leader: true,
             inflights: ins,
         };
-        let exp = "StateSnapshot match=1 next=2 learner paused pendingSnap=123 inactive inflight=1[full]";
+        let exp = "Snapshot match=1 next=2 learner paused pendingSnap=123 inactive inflight=1[full]";
         assert_eq!(format!("{}", pr), exp);
     }
 
     #[test]
     pub fn t_process_is_paused() {
-        struct Param {
-            state: StateType,
-            paused: bool,
-            w: bool,
+        // (state, paused, w)
+        let tests = vec![
+            (Probe, false, false),
+            (Probe, true, true),
+            (Replicate, false, false),
+            (Snapshot, false, true),
+            (Replicate, true, false),
+        ];
+        for (state, paused, w) in tests {
+            let p = Progress {
+                _match: 0,
+                next: 0,
+                state,
+                pending_snapshot: 0,
+                recent_active: false,
+                probe_sent: paused,
+                is_leader: false,
+                inflights: Inflights::new(256),
+            };
+            assert_eq!(w, p.is_paused());
         }
-        let tests = vec![Param {
-            state: StateType::StateProbe,
-            paused: false,
-            w: false,
-        }, Param {
-            state: StateType::StateProbe,
-            paused: true,
-            w: true,
-        }, Param {
-            state: StateType::StateReplicate,
-            paused: false,
-            w: false,
-        }, Param {
-            state: StateType::StateSnapshot,
-            paused: false,
-            w: true,
-        }, Param {
-            state: StateType::StateReplicate,
-            paused: true,
-            w: false,
-        }];
+    }
 
-        // for (i, tt) in tests.iter().enumerate() {
-        //     let p = Progress {
-        //         _match: 0,
-        //         next: 0,
-        //         state: tt.state.clone(),
-        //         pending_snapshot: 0,
-        //         recent_active: false,
-        //         probe_sent: tt.paused,
-        //     };
-        // }
+    #[test]
+    fn it_progress_resume() {
+
     }
 }
