@@ -18,6 +18,12 @@ pub enum StateType {
     Snapshot,
 }
 
+impl Default for StateType {
+    fn default() -> Self {
+        StateType::Probe
+    }
+}
+
 impl Display for StateType {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {

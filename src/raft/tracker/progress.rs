@@ -282,8 +282,43 @@ mod tests {
         }
     }
 
+    // ensures that maybe_update and maybe_update and maybe_decr_to will reset
+    // probe_sent
     #[test]
     fn it_progress_resume() {
+        let mut p = Progress{
+            _match: 0,
+            next: 2,
+            state: StateType::Probe,
+            pending_snapshot: 0,
+            recent_active: false,
+            probe_sent: true,
+            is_leader: false,
+            inflights: Default::default()
+        };
+        p.maybe_decr_to(1, 1);
+        assert!(!p.probe_sent);
 
+        p.probe_sent = true;
+        p.maybe_update(2);
+        assert!(!p.probe_sent);
+    }
+
+    #[test]
+    fn it_progress_become_probe() {
+        let _match = 1;
+        // (p, w_next)
+        let tests = vec![
+            (Progress{
+                _match,
+                next: 5,
+                state: Replicate,
+                pending_snapshot: 0,
+                recent_active: false,
+                probe_sent: false,
+                is_leader: false,
+                inflights: Default::default()
+            })
+        ];
     }
 }
