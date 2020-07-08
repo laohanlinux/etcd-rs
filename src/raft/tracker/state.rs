@@ -1,7 +1,7 @@
 use std::fmt::{self, Display, Formatter, Error};
 
 // StateType is the state of a tracked follower.
-#[derive(Clone, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum StateType {
     // StateProbe indicates that a follower whose last index isn't known. Such a
     // follower is "probe" (i.e. an append sent periodically) to narrow down

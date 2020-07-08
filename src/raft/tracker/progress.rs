@@ -113,7 +113,7 @@ impl Progress {
     }
 
     // maybe_update is called when an MsgAppResp arrives from the follower, with the
-    // index acked by it. The method returns false if the given n index comese of from
+    // index acked by it. The method returns false if the given n index comes of from
     // an outdated message. Otherwise it updates the progress and return true.
     pub fn maybe_update(&mut self, n: u64) -> bool {
         let mut update = false;
@@ -159,6 +159,8 @@ impl Progress {
             return true;
         }
 
+        // TODO: add by me
+        assert!(self.next > 0);
         // The rejection must be stale if "rejected" does not match next - 1. This
         // is because non-replicating followers are probed one entry at a time.
         if self.next - 1 != rejected {
@@ -286,7 +288,7 @@ mod tests {
     // probe_sent
     #[test]
     fn it_progress_resume() {
-        let mut p = Progress{
+        let mut p = Progress {
             _match: 0,
             next: 2,
             state: StateType::Probe,
@@ -294,7 +296,7 @@ mod tests {
             recent_active: false,
             probe_sent: true,
             is_leader: false,
-            inflights: Default::default()
+            inflights: Default::default(),
         };
         p.maybe_decr_to(1, 1);
         assert!(!p.probe_sent);
@@ -309,7 +311,7 @@ mod tests {
         let _match = 1;
         // (p, w_next)
         let tests = vec![
-            (Progress{
+            (Progress {
                 _match,
                 next: 5,
                 state: Replicate,
@@ -317,8 +319,150 @@ mod tests {
                 recent_active: false,
                 probe_sent: false,
                 is_leader: false,
-                inflights: Default::default()
-            })
+                inflights: Default::default(),
+            }, 2),
+            // snapshot finish
+            (Progress {
+                _match,
+                next: 5,
+                state: Snapshot,
+                pending_snapshot: 10,
+                recent_active: false,
+                probe_sent: false,
+                is_leader: false,
+                inflights: Inflights::new(1 << 8),
+            }, 11),
+            // snapshot failure
+            (Progress {
+                _match,
+                next: 5,
+                state: Snapshot,
+                pending_snapshot: 0,
+                recent_active: false,
+                probe_sent: false,
+                is_leader: false,
+                inflights: Inflights::new(1 << 8),
+            }, 2),
         ];
+
+        for (mut p, w_next) in tests {
+            p.become_probe();
+            assert_eq!(p.state, Probe);
+            assert_eq!(p._match, _match);
+            assert_eq!(p.next, w_next);
+        }
+    }
+
+    #[test]
+    fn it_progress_become_replicate() {
+        let mut p = Progress {
+            _match: 1,
+            next: 5,
+            state: Probe,
+            pending_snapshot: 0,
+            recent_active: false,
+            probe_sent: false,
+            is_leader: false,
+            inflights: Inflights::new(1 << 8),
+        };
+        p.become_replicate();
+        assert_eq!(p.state, Replicate);
+        assert_eq!(p._match, 1);
+        assert_eq!(p.next, p._match + 1);
+    }
+
+    #[test]
+    fn it_progress_become_snapshot() {
+        let mut p = Progress {
+            _match: 1,
+            next: 5,
+            state: Probe,
+            pending_snapshot: 0,
+            recent_active: false,
+            probe_sent: false,
+            is_leader: false,
+            inflights: Inflights::new(1 << 8),
+        };
+        p.become_snapshot(10);
+        assert_eq!(p.state, Snapshot);
+        assert_eq!(p._match, 1);
+        assert_eq!(p.pending_snapshot, 10);
+    }
+
+
+    #[test]
+    fn it_progress_update() {
+        let prev_m = 3;
+        let prev_n = 5;
+        //(update, w_m, w_n, w_ok)
+        let tests = vec![
+            // do not decrease match, next
+            (prev_m - 1, prev_m, prev_n, false),
+            // do not decrease next
+            (prev_m, prev_m, prev_n, false),
+            // increase match, do not decrease next
+            (prev_m + 1, prev_m + 1, prev_n, true),
+            // increase match, next
+            (prev_m + 2, prev_m + 2, prev_n + 1, true),
+        ];
+        for (update, w_m, w_n, w_ok) in tests {
+            let mut p = Progress {
+                _match: prev_m,
+                next: prev_n,
+                state: Default::default(),
+                pending_snapshot: 0,
+                recent_active: false,
+                probe_sent: false,
+                is_leader: false,
+                inflights: Default::default(),
+            };
+            assert_eq!(w_ok, p.maybe_update(update));
+            assert_eq!(p._match, w_m);
+            assert_eq!(p.next, w_n);
+        }
+    }
+
+    #[test]
+    fn it_progress_maybe_decr() {
+        // (state, m, n, rejected, last, w, w_n)
+        let tests = vec![
+            // state replicate and rejected is not greater than match
+            (Replicate, 5, 10, 5, 5, false, 10),
+            // state replicate and rejected is not greater that match, it is stale message
+            (Replicate, 5, 10, 4, 4, false, 10),
+            // state replicate and rejected is greater than match
+            // directly decrease to match+1
+            (Replicate, 5, 10, 9, 9, true, 6),
+            // next - 1 != rejected is always false
+            (Probe, 0, 10, 0, 0, false, 10),
+            // next - 1 != rejected is always false
+            (Probe, 0, 10, 5, 5, false, 10),
+            // next > 1 = decremented by 1
+            (Probe, 0, 10, 9, 9, true, 9),
+            // next > 1 = decremented by 1
+            (Probe, 0, 2, 1, 1, true, 1),
+            // next <= 1 = reset to 1
+            (Probe, 0, 1, 0, 0, true, 1),
+            // decrease to min(rejected, last+1)
+            (Probe, 0, 10, 9, 2, true, 3),
+            // rejected < 1, reset to 1
+            (Probe, 0, 10, 9, 0, true, 1),
+        ];
+
+        for (state, m, n, rejected, last, w, w_n) in tests {
+            let mut p = Progress {
+                _match: m,
+                next: n,
+                state,
+                pending_snapshot: 0,
+                recent_active: false,
+                probe_sent: false,
+                is_leader: false,
+                inflights: Default::default(),
+            };
+            assert_eq!(w, p.maybe_decr_to(rejected, last));
+            assert_eq!(m, p._match);
+            assert_eq!(w_n, p.next);
+        }
     }
 }
