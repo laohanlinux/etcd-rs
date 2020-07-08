@@ -5,7 +5,7 @@ pub type Index = u64;
 pub fn string(index: Index) -> String {
     if index == u64::max_value() {
         "∞".to_string()
-    }else {
+    } else {
         format!("{}", index)
     }
 }
@@ -22,7 +22,7 @@ impl AckedIndexer for MapAckIndexer {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum VoteResult {
     // VotePending indicates that the decision of the vote depends on future
     // votes, i.e. neither "yes" or "no" has reached quorum yet.
@@ -32,3 +32,11 @@ pub enum VoteResult {
     // VoteWon indicates that the quorum has voted "yes"
     VoteWon,
 }
+
+// impl PartialEq for VoteResult {
+//     fn eq(&self, other: &Self) -> bool {
+//         match self {
+//
+//         }
+//     }
+// }

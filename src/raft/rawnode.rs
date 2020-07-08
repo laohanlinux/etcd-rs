@@ -54,7 +54,7 @@ pub struct SoftState {
 // RawNode is a thread-unsafe Node.
 // The methods of this struct corresponds to the methods of Node and are described
 // more fully there.
-pub struct RawNode<S: Storage> {
+pub struct RawNode<S: Storage + Clone> {
     raft: Raft<S>,
     marker: PhantomData<S>,
     // prev_soft_st: SoftState,
@@ -68,7 +68,7 @@ pub struct RawNode<S: Storage> {
 // recommended that instead of calling Bootstrap. application bootstrap their
 // state manually by setting up a Storage that has a first index > 1 and which
 // stores the described ConfState as its InitialState.
-impl<S: Storage> RawNode<S> {
+impl<S: Storage + Clone> RawNode<S> {
     // Tick advances the interval logical clock by a single tick.
     pub fn tick(&mut self) {
         self.raft.tick();
@@ -118,7 +118,7 @@ impl<S: Storage> RawNode<S> {
         if is_local_message(m.get_field_type()) {
             return Err(RawRaftError::StepLocalMsg);
         }
-        if self.raft.prs.contains_key(&m.get_from()) || !is_response_message(m.get_field_type()) {
+        if self.raft.prs.progress.0.contains_key(&m.get_from()) || !is_response_message(m.get_field_type()) {
             return self.raft.step(m).map_err(|err| RawRaftError::StepUnknown(err));
         }
         Err(RawRaftError::StepPeerNotFound)
@@ -149,13 +149,13 @@ impl<S: Storage> RawNode<S> {
     // TODO
     // GetProgress return the the Progress of this node and its peers, if this
     // node is leader.
-    pub fn get_progress(&self) -> HashMap<u64, Progress> {
-        let mut prs = HashMap::new();
-        if self.raft.state == State::Leader {
-            prs = self.raft.prs.clone();
-        }
-        prs
-    }
+    // pub fn get_progress(&self) -> HashMap<u64, Progress> {
+    //     let mut prs = HashMap::new();
+    //     if self.raft.state == State::Leader {
+    //         prs = self.raft.prs.clone();
+    //     }
+    //     prs
+    // }
 
     // TODO
     // TransferLeader tris=es to transfer leadership to the given transferee.
