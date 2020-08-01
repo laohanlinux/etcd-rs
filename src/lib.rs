@@ -8,7 +8,6 @@ use std::collections::HashMap;
 
 pub mod lease;
 pub mod mvcc;
-pub mod raft;
 
 #[cfg(test)]
 mod tests {
